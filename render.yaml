@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nexus-tecnologia-central
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/nexus.db
+    disk:
+      name: nexus-data
+      mountPath: /var/data
+      sizeGB: 1

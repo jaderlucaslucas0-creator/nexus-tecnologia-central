@@ -68,7 +68,7 @@ def toggle_sistema(system_id):
  c=get_db();row=c.execute("SELECT enabled FROM systems WHERE id=?",(system_id,)).fetchone()
  if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
  value=0 if row["enabled"] else 1;c.execute("UPDATE systems SET enabled=? WHERE id=?",(value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(value)}
-@app.post("/sistemas/excluir/<int:system_id")
+@app.post("/sistemas/excluir/<int:system_id>")
 @login_required
 def excluir_sistema(system_id):
  c=get_db();c.execute("DELETE FROM systems WHERE id=?",(system_id,));c.commit();c.close();return redirect(url_for("dashboard"))

@@ -9,6 +9,8 @@ def get_db():
  c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
 def init_db():
  c=get_db(); c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"); c.execute("CREATE TABLE IF NOT EXISTS systems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+ try:c.execute("ALTER TABLE systems ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
+ except sqlite3.OperationalError:pass
  if ADMIN_USERNAME and ADMIN_PASSWORD and not c.execute("SELECT id FROM users WHERE username=?",(ADMIN_USERNAME,)).fetchone(): c.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)",(ADMIN_USERNAME,generate_password_hash(ADMIN_PASSWORD),"Administrador"))
  c.commit(); c.close()
 init_db()
@@ -42,7 +44,7 @@ def usuarios():return send_from_directory(".","usuarios.html")
 @app.get("/api/usuarios")
 @login_required
 def listar_usuarios():
- c=get_db(); rows=c.execute("SELECT id,name,username,created_at FROM users ORDER BY id").fetchall();c.close();return {"users":[dict(x) for x in rows]}
+ c=get_db();rows=c.execute("SELECT id,name,username,created_at FROM users ORDER BY id").fetchall();c.close();return {"users":[dict(x) for x in rows]}
 @app.post("/usuarios/excluir/<int:user_id>")
 @login_required
 def excluir_usuario(user_id):
@@ -55,12 +57,18 @@ def criar_sistema():
  n=request.form.get("name","").strip(); url=request.form.get("url","").strip(); d=request.form.get("description","").strip()
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
- c=get_db();c.execute("INSERT INTO systems(name,url,description) VALUES(?,?,?)",(n,url,d));c.commit();c.close();return redirect(url_for("dashboard"))
+ c=get_db();c.execute("INSERT INTO systems(name,url,description,enabled) VALUES(?,?,?,1)",(n,url,d));c.commit();c.close();return redirect(url_for("dashboard"))
 @app.get("/api/sistemas")
 @login_required
 def listar_sistemas():
- c=get_db();rows=c.execute("SELECT id,name,url,description,created_at FROM systems ORDER BY id DESC").fetchall();c.close();return {"systems":[dict(x) for x in rows]}
-@app.post("/sistemas/excluir/<int:system_id>")
+ c=get_db();rows=c.execute("SELECT id,name,url,description,enabled,created_at FROM systems ORDER BY id DESC").fetchall();c.close();return {"systems":[dict(x) for x in rows]}
+@app.post("/sistemas/<int:system_id>/toggle")
+@login_required
+def toggle_sistema(system_id):
+ c=get_db();row=c.execute("SELECT enabled FROM systems WHERE id=?",(system_id,)).fetchone()
+ if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
+ value=0 if row["enabled"] else 1;c.execute("UPDATE systems SET enabled=? WHERE id=?",(value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(value)}
+@app.post("/sistemas/excluir/<int:system_id")
 @login_required
 def excluir_sistema(system_id):
  c=get_db();c.execute("DELETE FROM systems WHERE id=?",(system_id,));c.commit();c.close();return redirect(url_for("dashboard"))

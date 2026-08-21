@@ -1,7 +1,9 @@
 import hmac
 import os
+import sqlite3
 
 from flask import Flask, redirect, request, send_from_directory, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__, static_folder="src", static_url_path="/src")
 
@@ -9,10 +11,49 @@ app = Flask(__name__, static_folder="src", static_url_path="/src")
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+DB_PATH = os.environ.get("DATABASE_PATH", "nexus.db")
+
+
+def get_db():
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    return db
+
+
+def init_db():
+    db = get_db()
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.commit()
+    db.close()
+
+
+init_db()
 
 
 def credentials_configured():
     return bool(ADMIN_USERNAME and ADMIN_PASSWORD)
+
+
+def authenticate_user(username, password):
+    if credentials_configured():
+        valid_username = hmac.compare_digest(username, ADMIN_USERNAME)
+        valid_password = hmac.compare_digest(password, ADMIN_PASSWORD)
+        if valid_username and valid_password:
+            return True
+
+    db = get_db()
+    user = db.execute("SELECT password_hash FROM users WHERE username = ?", (username,)).fetchone()
+    db.close()
+    return bool(user and check_password_hash(user["password_hash"], password))
 
 
 @app.get("/")
@@ -24,19 +65,16 @@ def home():
 
 @app.post("/login")
 def login():
-    if not credentials_configured():
-        return {"success": False, "message": "O usuário do sistema ainda não foi configurado no Render."}, 503
+    if not credentials_configured() and not os.path.exists(DB_PATH):
+        return {"success": False, "message": "Configure o usuário administrador no Render."}, 503
 
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
 
-    valid_username = hmac.compare_digest(username, ADMIN_USERNAME)
-    valid_password = hmac.compare_digest(password, ADMIN_PASSWORD)
-
-    if valid_username and valid_password:
+    if authenticate_user(username, password):
         session.clear()
         session["authenticated"] = True
-        session["username"] = ADMIN_USERNAME
+        session["username"] = username
         return redirect(url_for("dashboard"))
 
     return {"success": False, "message": "Usuário ou senha incorretos."}, 401
@@ -47,6 +85,45 @@ def dashboard():
     if not session.get("authenticated"):
         return redirect(url_for("home"))
     return send_from_directory(".", "dashboard.html")
+
+
+@app.route("/usuarios", methods=["GET", "POST"])
+def usuarios():
+    if not session.get("authenticated"):
+        return redirect(url_for("home"))
+
+    message = ""
+    success = False
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if len(username) < 3:
+            message = "O usuário precisa ter pelo menos 3 caracteres."
+        elif len(password) < 6:
+            message = "A senha precisa ter pelo menos 6 caracteres."
+        elif password != confirm_password:
+            message = "As senhas não conferem."
+        else:
+            db = get_db()
+            try:
+                db.execute(
+                    "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                    (username, generate_password_hash(password)),
+                )
+                db.commit()
+                success = True
+                message = "Usuário criado com sucesso!"
+            except sqlite3.IntegrityError:
+                message = "Esse usuário já existe."
+            finally:
+                db.close()
+
+    return send_from_directory(".", "usuarios.html") if request.method == "GET" else (
+        send_from_directory(".", "usuarios.html"), 200
+    )
 
 
 @app.post("/logout")

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Nexus Tecnologia Central - gerenciamento e suporte de sistemas" />
+    <title>Nexus Tecnologia Central</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">N</div>
+        <div>
+          <strong>Nexus</strong>
+          <span>Tecnologia</span>
+        </div>
+      </div>
+      <nav>
+        <a class="active" href="#dashboard">Dashboard</a>
+        <a href="#sistemas">Sistemas</a>
+        <a href="#suporte">Suporte</a>
+        <a href="#monitoramento">Monitoramento</a>
+        <a href="#historico">Histórico</a>
+      </nav>
+      <div class="sidebar-footer">Painel administrativo</div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">CENTRAL DE CONTROLE</p>
+          <h1>Dashboard</h1>
+        </div>
+        <div class="profile">Administrador</div>
+      </header>
+
+      <section id="dashboard" class="hero">
+        <div>
+          <p class="eyebrow">NEXUS TECNOLOGIA</p>
+          <h2>Gerencie todos os seus sistemas em um só lugar.</h2>
+          <p class="muted">Acompanhe sistemas, suporte e disponibilidade de forma simples e organizada.</p>
+        </div>
+        <button class="primary" id="newSystem">+ Novo sistema</button>
+      </section>
+
+      <section class="cards">
+        <article class="card"><span>Sistemas</span><strong>0</strong><small>Cadastrados</small></article>
+        <article class="card"><span>Online</span><strong class="success">0</strong><small>Funcionando</small></article>
+        <article class="card"><span>Offline</span><strong class="danger">0</strong><small>Precisam de atenção</small></article>
+        <article class="card"><span>Chamados</span><strong>0</strong><small>Pendentes</small></article>
+      </section>
+
+      <section id="sistemas" class="panel">
+        <div class="panel-heading"><div><h3>Meus sistemas</h3><p class="muted">Seus sistemas aparecerão aqui.</p></div><button class="secondary" id="emptyAction">Adicionar sistema</button></div>
+        <div class="empty-state"><div class="empty-icon">⌘</div><h4>Nenhum sistema cadastrado</h4><p>Comece adicionando o primeiro sistema que você deseja gerenciar.</p></div>
+      </section>
+
+      <section class="grid-two">
+        <div id="monitoramento" class="panel"><h3>Status dos sistemas</h3><div class="status-row"><span>Monitoramento</span><b class="badge">Aguardando cadastro</b></div></div>
+        <div id="suporte" class="panel"><h3>Suporte</h3><div class="status-row"><span>Chamados pendentes</span><b>0</b></div></div>
+      </section>
+    </main>
+    <script src="./src/app.js"></script>
+  </body>
+</html>

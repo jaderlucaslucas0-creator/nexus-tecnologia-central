@@ -2,7 +2,7 @@ import hmac
 import os
 import sqlite3
 
-from flask import Flask, redirect, request, send_from_directory, session, url_for
+from flask import Flask, jsonify, redirect, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__, static_folder="src", static_url_path="/src")
@@ -65,9 +65,6 @@ def home():
 
 @app.post("/login")
 def login():
-    if not credentials_configured() and not os.path.exists(DB_PATH):
-        return {"success": False, "message": "Configure o usuário administrador no Render."}, 503
-
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
 
@@ -92,38 +89,33 @@ def usuarios():
     if not session.get("authenticated"):
         return redirect(url_for("home"))
 
-    message = ""
-    success = False
+    if request.method == "GET":
+        return send_from_directory(".", "usuarios.html")
 
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        confirm_password = request.form.get("confirm_password", "")
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    confirm_password = request.form.get("confirm_password", "")
 
-        if len(username) < 3:
-            message = "O usuário precisa ter pelo menos 3 caracteres."
-        elif len(password) < 6:
-            message = "A senha precisa ter pelo menos 6 caracteres."
-        elif password != confirm_password:
-            message = "As senhas não conferem."
-        else:
-            db = get_db()
-            try:
-                db.execute(
-                    "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                    (username, generate_password_hash(password)),
-                )
-                db.commit()
-                success = True
-                message = "Usuário criado com sucesso!"
-            except sqlite3.IntegrityError:
-                message = "Esse usuário já existe."
-            finally:
-                db.close()
+    if len(username) < 3:
+        return jsonify(success=False, message="O usuário precisa ter pelo menos 3 caracteres."), 400
+    if len(password) < 6:
+        return jsonify(success=False, message="A senha precisa ter pelo menos 6 caracteres."), 400
+    if password != confirm_password:
+        return jsonify(success=False, message="As senhas não conferem."), 400
 
-    return send_from_directory(".", "usuarios.html") if request.method == "GET" else (
-        send_from_directory(".", "usuarios.html"), 200
-    )
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (username, generate_password_hash(password)),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify(success=False, message="Esse usuário já existe."), 409
+    finally:
+        db.close()
+
+    return jsonify(success=True, message="Usuário criado com sucesso!")
 
 
 @app.post("/logout")

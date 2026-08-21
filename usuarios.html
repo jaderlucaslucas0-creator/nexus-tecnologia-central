@@ -1,39 +1,15 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nexus Tecnologia | Usuários</title>
-  <link rel="stylesheet" href="./src/styles.css" />
-  <style>
-    .users-page{min-height:100vh;padding:32px}.users-card{width:min(900px,100%);margin:auto;padding:32px;border-radius:24px;background:rgba(10,18,35,.92);border:1px solid rgba(255,255,255,.12);color:#fff}.users-card h1{margin-top:0}.user-form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;margin:24px 0}.user-form input{padding:13px;border-radius:10px;border:1px solid #33445f;background:#101b2e;color:#fff}.user-form button,.back{border:0;border-radius:10px;padding:13px 18px;background:#0755ff;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}.user-list{display:grid;gap:10px}.user-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:12px;background:rgba(255,255,255,.06)}.delete{border:0;border-radius:8px;padding:8px 12px;background:#b42318;color:#fff;cursor:pointer}.muted{color:#aebbd0}@media(max-width:760px){.user-form{grid-template-columns:1fr}.user-row{gap:12px;flex-wrap:wrap}}
-  </style>
-</head>
-<body class="login-page users-page">
-  <main class="users-card">
-    <a class="back" href="/dashboard">← Voltar ao painel</a>
-    <h1>Gerenciar usuários</h1>
-    <p class="muted">Crie usuários para acessar a Central de Gerenciamento. As senhas são armazenadas com hash.</p>
-
-    <form class="user-form" action="/usuarios/criar" method="post">
-      <input name="name" placeholder="Nome completo" required />
-      <input name="username" placeholder="Usuário" required autocomplete="username" />
-      <input name="password" type="password" placeholder="Senha (mín. 6)" required minlength="6" autocomplete="new-password" />
-      <button type="submit">Criar usuário</button>
-    </form>
-
-    <div id="userList" class="user-list"><p class="muted">Carregando usuários...</p></div>
-  </main>
-  <script>
-    async function loadUsers(){
-      const list=document.getElementById('userList');
-      const res=await fetch('/api/usuarios');
-      if(!res.ok){list.innerHTML='<p class="muted">Não foi possível carregar os usuários.</p>';return;}
-      const data=await res.json();
-      list.innerHTML=data.users.map(u=>`<div class="user-row"><div><strong>${escapeHtml(u.name)}</strong><br><span class="muted">@${escapeHtml(u.username)}</span></div><form method="post" action="/usuarios/excluir/${u.id}" onsubmit="return confirm('Excluir este usuário?')"><button class="delete" type="submit">Excluir</button></form></div>`).join('');
-    }
-    function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
-    loadUsers();
-  </script>
-</body>
-</html>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexus Tecnologia | Usuários</title><link rel="stylesheet" href="./src/styles.css"><style>
+.page{min-height:100vh;padding:28px;color:#fff}.card{max-width:1000px;margin:auto;padding:28px;border:1px solid #193b5b;border-radius:22px;background:#071326;box-shadow:0 25px 70px #0008}.head{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:24px}.head h1{margin:0 0 5px}.muted{color:#8092aa;font-size:12px}.back,.primary,.danger{border:0;border-radius:10px;padding:11px 16px;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}.back{background:#14253d}.primary{background:#1765ff}.toolbar{display:flex;gap:10px;margin-bottom:18px}.search{flex:1;padding:13px 15px;border-radius:11px;border:1px solid #294365;background:#050d1c;color:#fff;outline:0}.list{display:grid;gap:10px}.row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px;border:1px solid #172f4b;border-radius:14px;background:#0a182d}.info{display:flex;align-items:center;gap:13px}.avatar{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#123d70;color:#62d1ff;font-weight:900}.name{font-weight:800}.actions{display:flex;align-items:center;gap:9px}.danger{background:#a92323;font-size:11px}.empty{text-align:center;padding:30px}.modal{display:none;position:fixed;inset:0;background:#000b;align-items:center;justify-content:center;padding:18px;z-index:5}.modal.show{display:flex}.box{width:min(430px,100%);padding:25px;border-radius:18px;background:#09172b;border:1px solid #285071}.box h2{margin-top:0}.form{display:grid;gap:11px}.form input{padding:12px;border-radius:9px;border:1px solid #294365;background:#050d1c;color:#fff}.form-actions{display:flex;gap:10px;margin-top:8px}.form-actions button{flex:1}.close{background:#1a2a41;color:#fff;border:0;border-radius:9px;padding:12px;font-weight:800;cursor:pointer}@media(max-width:650px){.page{padding:15px}.card{padding:20px}.head{align-items:flex-start;flex-direction:column}.row{align-items:flex-start;flex-direction:column}.actions{width:100%;justify-content:flex-end}}
+</style></head>
+<body class="login-page page"><main class="card"><header class="head"><div><h1>👥 Gerenciar usuários</h1><span class="muted">Crie, pesquise e exclua os usuários da Nexus Tecnologia.</span></div><a class="back" href="/dashboard">← Dashboard</a></header><div class="toolbar"><input id="search" class="search" placeholder="🔎 Pesquisar por nome ou usuário..."><button class="primary" onclick="openCreate()">+ Novo usuário</button></div><div id="userList" class="list"><div class="empty muted">Carregando usuários...</div></div></main>
+<div id="modal" class="modal"><div class="box"><h2>Novo usuário</h2><p class="muted">A senha será protegida com hash.</p><form class="form" action="/usuarios/criar" method="post"><input name="name" placeholder="Nome completo" required><input name="username" placeholder="Usuário" required autocomplete="username"><input name="password" type="password" placeholder="Senha (mín. 6 caracteres)" minlength="6" required autocomplete="new-password"><div class="form-actions"><button type="button" class="close" onclick="closeCreate()">Cancelar</button><button class="primary" type="submit">Criar usuário</button></div></form></div></div>
+<script>
+let users=[];const list=document.getElementById('userList');
+async function loadUsers(){const r=await fetch('/api/usuarios');if(!r.ok){list.innerHTML='<div class="empty muted">Não foi possível carregar os usuários.</div>';return}users=(await r.json()).users;render()}
+function render(){const q=document.getElementById('search').value.toLowerCase();const filtered=users.filter(u=>(u.name+' '+u.username).toLowerCase().includes(q));if(!filtered.length){list.innerHTML='<div class="empty muted">Nenhum usuário encontrado.</div>';return}list.innerHTML=filtered.map(u=>`<div class="row"><div class="info"><div class="avatar">${escapeHtml(u.name.charAt(0).toUpperCase())}</div><div><div class="name">${escapeHtml(u.name)}</div><span class="muted">@${escapeHtml(u.username)} · Criado em ${escapeHtml(u.created_at||'')}</span></div></div><div class="actions"><button class="danger" onclick="removeUser(${u.id},'${escapeJs(u.name)}')">🗑️ Excluir</button></div></div>`).join('')}
+async function removeUser(id,name){if(!confirm(`Tem certeza que deseja excluir o usuário “${name}”?\n\nEssa ação não pode ser desfeita.`))return;const r=await fetch('/usuarios/excluir/'+id,{method:'POST'});if(r.ok){await loadUsers()}else{let d={};try{d=await r.json()}catch{}alert(d.message||'Não foi possível excluir o usuário.')}}
+function openCreate(){document.getElementById('modal').classList.add('show')}function closeCreate(){document.getElementById('modal').classList.remove('show')}function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}function escapeJs(v){return String(v).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}document.getElementById('search').addEventListener('input',render);loadUsers();
+</script></body></html>

@@ -1,0 +1,8 @@
+RENDER — Nexus Tecnologia
+
+Programa: Render
+Tela inicial: Login
+Usuário inicial: admin
+Senha inicial: 1234
+
+A autenticação atual é apenas para a primeira versão web. A senha deve ser substituída por autenticação segura antes de uso em produção.

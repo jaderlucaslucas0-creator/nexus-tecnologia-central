@@ -11,16 +11,23 @@
       .dashboard-card { width: min(760px, 100%); padding: 42px; border-radius: 24px; background: rgba(10, 18, 35, .88); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 25px 80px rgba(0,0,0,.35); text-align: center; }
       .dashboard-card h1 { margin: 0 0 10px; color: #fff; }
       .dashboard-card p { color: #b9c5d8; margin-bottom: 28px; }
-      .logout-button { border: 0; border-radius: 12px; padding: 13px 22px; cursor: pointer; font-weight: 700; color: #fff; background: #0755ff; }
+      .dashboard-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+      .dashboard-button, .logout-button { border: 0; border-radius: 12px; padding: 13px 22px; cursor: pointer; font-weight: 700; color: #fff; text-decoration: none; }
+      .dashboard-button { background: #0755ff; }
+      .logout-button { background: rgba(255,255,255,.1); }
     </style>
   </head>
   <body class="login-page dashboard-page">
     <main class="dashboard-card">
-      <h1>Login realizado com sucesso!</h1>
-      <p>Você está dentro da Central de Gerenciamento da Nexus Tecnologia.</p>
-      <form action="/logout" method="post">
-        <button class="logout-button" type="submit">Sair do sistema</button>
-      </form>
+      <p class="eyebrow">NEXUS TECNOLOGIA</p>
+      <h1>Central de Gerenciamento</h1>
+      <p>Login realizado com sucesso! Escolha uma opção para continuar.</p>
+      <div class="dashboard-actions">
+        <a class="dashboard-button" href="/usuarios">+ Criar novo usuário</a>
+        <form action="/logout" method="post">
+          <button class="logout-button" type="submit">Sair do sistema</button>
+        </form>
+      </div>
     </main>
   </body>
 </html>

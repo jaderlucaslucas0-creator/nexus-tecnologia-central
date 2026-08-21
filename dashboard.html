@@ -11,7 +11,7 @@
 <body>
   <header class="top">
     <div class="brand">RENDER <span>· NEXUS TECNOLOGIA</span></div>
-    <div class="user">Usuário: <strong>admin</strong><button class="logout" id="logout">Sair</button></div>
+    <div class="user">Usuário: <strong>admin</strong><a class="logout" href="/logout">Sair</a></div>
   </header>
   <main class="content">
     <div class="eyebrow">CENTRAL DE GERENCIAMENTO</div>
@@ -23,9 +23,5 @@
       <article class="card"><h2>Suporte</h2><p>Central de suporte e histórico de atividades.</p></article>
     </section>
   </main>
-  <script>
-    if (sessionStorage.getItem('renderAuthenticated') !== 'true') window.location.replace('./index.html');
-    document.getElementById('logout').addEventListener('click', () => { sessionStorage.removeItem('renderAuthenticated'); window.location.replace('./index.html'); });
-  </script>
 </body>
 </html>

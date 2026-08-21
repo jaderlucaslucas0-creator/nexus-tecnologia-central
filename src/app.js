@@ -1,13 +1,16 @@
-document.querySelectorAll('nav a').forEach(link => {
-  link.addEventListener('click', () => {
-    document.querySelectorAll('nav a').forEach(item => item.classList.remove('active'));
-    link.classList.add('active');
-  });
+const form = document.getElementById('loginForm');
+const password = document.getElementById('password');
+const togglePassword = document.getElementById('togglePassword');
+const message = document.getElementById('loginMessage');
+
+togglePassword.addEventListener('click', () => {
+  const visible = password.type === 'text';
+  password.type = visible ? 'password' : 'text';
+  togglePassword.textContent = visible ? 'Mostrar' : 'Ocultar';
+  togglePassword.setAttribute('aria-label', visible ? 'Mostrar senha' : 'Ocultar senha');
 });
 
-function addSystemMessage() {
-  alert('O cadastro de sistemas será implementado na próxima etapa.');
-}
-
-document.getElementById('newSystem').addEventListener('click', addSystemMessage);
-document.getElementById('emptyAction').addEventListener('click', addSystemMessage);
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  message.textContent = 'A autenticação será configurada na próxima etapa.';
+});

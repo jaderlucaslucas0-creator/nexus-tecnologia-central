@@ -3,62 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Nexus Tecnologia Central - gerenciamento e suporte de sistemas" />
-    <title>Nexus Tecnologia Central</title>
+    <meta name="description" content="Nexus Tecnologia Central - acesso administrativo" />
+    <title>Nexus Tecnologia | Login</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
-  <body>
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">N</div>
-        <div>
-          <strong>Nexus</strong>
-          <span>Tecnologia</span>
+  <body class="login-page">
+    <div class="background-logo" aria-hidden="true">
+      <svg viewBox="0 0 700 430" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bgBlue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0755ff"/><stop offset=".55" stop-color="#08ddff"/><stop offset="1" stop-color="#164eff"/></linearGradient>
+          <linearGradient id="bgSilver" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".5" stop-color="#aeb8c8"/><stop offset="1" stop-color="#fff"/></linearGradient>
+        </defs>
+        <g transform="translate(350 150)">
+          <circle r="120" fill="none" stroke="url(#bgSilver)" stroke-width="18" stroke-dasharray="480 95" transform="rotate(-35)"/>
+          <circle r="120" fill="none" stroke="url(#bgBlue)" stroke-width="9" stroke-dasharray="420 155" transform="rotate(-15)"/>
+          <path d="M-82-67 L-20-5 L-20 80 L-60 55 L-60-23 L-98-61 Z" fill="url(#bgBlue)"/>
+          <path d="M-80-70 L-35-70 L70 50 L32 50 Z" fill="url(#bgSilver)"/>
+          <path d="M55-52 L91-25 L91 55 L55 31 Z" fill="url(#bgBlue)"/>
+          <path d="M-42 80 L22 80 L-55-6 L-91-6 Z" fill="url(#bgBlue)"/>
+        </g>
+        <text x="350" y="310" text-anchor="middle" font-family="Arial,Segoe UI,sans-serif" font-size="92" font-weight="800" letter-spacing="-6" fill="url(#bgSilver)">NE<tspan fill="url(#bgBlue)">X</tspan>US</text>
+        <line x1="80" y1="340" x2="270" y2="340" stroke="#00bfff" stroke-width="3"/><line x1="430" y1="340" x2="620" y2="340" stroke="#00bfff" stroke-width="3"/>
+        <text x="350" y="365" text-anchor="middle" font-family="Arial,Segoe UI,sans-serif" font-size="25" font-weight="500" letter-spacing="10" fill="#f2f4f8">TECNOLOGIA</text>
+        <text x="350" y="408" text-anchor="middle" font-family="Arial,Segoe UI,sans-serif" font-size="13" letter-spacing="4" fill="#d7e0ee">CONECTANDO IDEIAS. <tspan fill="#16a8ff" font-weight="700">CRIANDO SOLUÇÕES.</tspan></text>
+      </svg>
+    </div>
+
+    <main class="login-shell">
+      <section class="login-card">
+        <div class="logo-wrap" aria-label="Nexus Tecnologia">
+          <svg class="logo" viewBox="0 0 700 430" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b55ff"/><stop offset=".55" stop-color="#08dfff"/><stop offset="1" stop-color="#1450ff"/></linearGradient>
+              <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".5" stop-color="#c8d0dc"/><stop offset="1" stop-color="#fff"/></linearGradient>
+              <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+            <g transform="translate(350 150)" filter="url(#glow)">
+              <circle r="120" fill="none" stroke="url(#silver)" stroke-width="18" stroke-dasharray="480 95" transform="rotate(-35)"/>
+              <circle r="120" fill="none" stroke="url(#blue)" stroke-width="9" stroke-dasharray="420 155" transform="rotate(-15)"/>
+              <path d="M-82-67 L-20-5 L-20 80 L-60 55 L-60-23 L-98-61 Z" fill="url(#blue)"/>
+              <path d="M-80-70 L-35-70 L70 50 L32 50 Z" fill="url(#silver)"/>
+              <path d="M55-52 L91-25 L91 55 L55 31 Z" fill="url(#blue)"/>
+              <path d="M-42 80 L22 80 L-55-6 L-91-6 Z" fill="url(#blue)"/>
+            </g>
+            <text x="350" y="310" text-anchor="middle" font-family="Arial,Segoe UI,sans-serif" font-size="92" font-weight="800" letter-spacing="-6" fill="url(#silver)">NE<tspan fill="url(#blue)">X</tspan>US</text>
+            <line x1="80" y1="340" x2="270" y2="340" stroke="#00bfff" stroke-width="3"/><line x1="430" y1="340" x2="620" y2="340" stroke="#00bfff" stroke-width="3"/>
+            <text x="350" y="365" text-anchor="middle" font-family="Arial,Segoe UI,sans-serif" font-size="25" font-weight="500" letter-spacing="10" fill="#f2f4f8">TECNOLOGIA</text>
+            <text x="350" y="408" text-anchor="middle" font-family="Arial,Segoe UI,sans-serif" font-size="13" letter-spacing="4" fill="#d7e0ee">CONECTANDO IDEIAS. <tspan fill="#16a8ff" font-weight="700">CRIANDO SOLUÇÕES.</tspan></text>
+          </svg>
         </div>
-      </div>
-      <nav>
-        <a class="active" href="#dashboard">Dashboard</a>
-        <a href="#sistemas">Sistemas</a>
-        <a href="#suporte">Suporte</a>
-        <a href="#monitoramento">Monitoramento</a>
-        <a href="#historico">Histórico</a>
-      </nav>
-      <div class="sidebar-footer">Painel administrativo</div>
-    </aside>
 
-    <main class="content">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">CENTRAL DE CONTROLE</p>
-          <h1>Dashboard</h1>
+        <div class="login-heading">
+          <p class="eyebrow">CENTRAL DE GERENCIAMENTO</p>
+          <h1>Bem-vindo</h1>
+          <p>Acesse o painel da Nexus Tecnologia.</p>
         </div>
-        <div class="profile">Administrador</div>
-      </header>
 
-      <section id="dashboard" class="hero">
-        <div>
-          <p class="eyebrow">NEXUS TECNOLOGIA</p>
-          <h2>Gerencie todos os seus sistemas em um só lugar.</h2>
-          <p class="muted">Acompanhe sistemas, suporte e disponibilidade de forma simples e organizada.</p>
-        </div>
-        <button class="primary" id="newSystem">+ Novo sistema</button>
-      </section>
+        <form id="loginForm" class="login-form">
+          <label for="username">Usuário</label>
+          <div class="input-wrap">
+            <span class="input-icon">◉</span>
+            <input id="username" name="username" type="text" autocomplete="username" placeholder="Digite seu usuário" required />
+          </div>
 
-      <section class="cards">
-        <article class="card"><span>Sistemas</span><strong>0</strong><small>Cadastrados</small></article>
-        <article class="card"><span>Online</span><strong class="success">0</strong><small>Funcionando</small></article>
-        <article class="card"><span>Offline</span><strong class="danger">0</strong><small>Precisam de atenção</small></article>
-        <article class="card"><span>Chamados</span><strong>0</strong><small>Pendentes</small></article>
-      </section>
+          <label for="password">Senha</label>
+          <div class="input-wrap">
+            <span class="input-icon">●</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Digite sua senha" required />
+            <button type="button" class="toggle-password" id="togglePassword" aria-label="Mostrar senha">Mostrar</button>
+          </div>
 
-      <section id="sistemas" class="panel">
-        <div class="panel-heading"><div><h3>Meus sistemas</h3><p class="muted">Seus sistemas aparecerão aqui.</p></div><button class="secondary" id="emptyAction">Adicionar sistema</button></div>
-        <div class="empty-state"><div class="empty-icon">⌘</div><h4>Nenhum sistema cadastrado</h4><p>Comece adicionando o primeiro sistema que você deseja gerenciar.</p></div>
-      </section>
+          <button class="login-button" type="submit">Entrar no sistema <span>→</span></button>
+          <p id="loginMessage" class="login-message" role="status"></p>
+        </form>
 
-      <section class="grid-two">
-        <div id="monitoramento" class="panel"><h3>Status dos sistemas</h3><div class="status-row"><span>Monitoramento</span><b class="badge">Aguardando cadastro</b></div></div>
-        <div id="suporte" class="panel"><h3>Suporte</h3><div class="status-row"><span>Chamados pendentes</span><b>0</b></div></div>
+        <footer>© 2026 Nexus Tecnologia · Painel administrativo</footer>
       </section>
     </main>
     <script src="./src/app.js"></script>

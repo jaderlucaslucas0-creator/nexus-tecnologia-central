@@ -1,0 +1,12 @@
+{
+  "name": "render-nexus-tecnologia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Render - Central de Gerenciamento da Nexus Tecnologia",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

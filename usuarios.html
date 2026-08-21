@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus Tecnologia | Usuários</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+  <style>
+    .users-page{min-height:100vh;padding:32px}.users-card{width:min(900px,100%);margin:auto;padding:32px;border-radius:24px;background:rgba(10,18,35,.92);border:1px solid rgba(255,255,255,.12);color:#fff}.users-card h1{margin-top:0}.user-form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;margin:24px 0}.user-form input{padding:13px;border-radius:10px;border:1px solid #33445f;background:#101b2e;color:#fff}.user-form button,.back{border:0;border-radius:10px;padding:13px 18px;background:#0755ff;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}.user-list{display:grid;gap:10px}.user-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:12px;background:rgba(255,255,255,.06)}.delete{border:0;border-radius:8px;padding:8px 12px;background:#b42318;color:#fff;cursor:pointer}.muted{color:#aebbd0}@media(max-width:760px){.user-form{grid-template-columns:1fr}.user-row{gap:12px;flex-wrap:wrap}}
+  </style>
+</head>
+<body class="login-page users-page">
+  <main class="users-card">
+    <a class="back" href="/dashboard">← Voltar ao painel</a>
+    <h1>Gerenciar usuários</h1>
+    <p class="muted">Crie usuários para acessar a Central de Gerenciamento. As senhas são armazenadas com hash.</p>
+
+    <form class="user-form" action="/usuarios/criar" method="post">
+      <input name="name" placeholder="Nome completo" required />
+      <input name="username" placeholder="Usuário" required autocomplete="username" />
+      <input name="password" type="password" placeholder="Senha (mín. 6)" required minlength="6" autocomplete="new-password" />
+      <button type="submit">Criar usuário</button>
+    </form>
+
+    <div id="userList" class="user-list"><p class="muted">Carregando usuários...</p></div>
+  </main>
+  <script>
+    async function loadUsers(){
+      const list=document.getElementById('userList');
+      const res=await fetch('/api/usuarios');
+      if(!res.ok){list.innerHTML='<p class="muted">Não foi possível carregar os usuários.</p>';return;}
+      const data=await res.json();
+      list.innerHTML=data.users.map(u=>`<div class="user-row"><div><strong>${escapeHtml(u.name)}</strong><br><span class="muted">@${escapeHtml(u.username)}</span></div><form method="post" action="/usuarios/excluir/${u.id}" onsubmit="return confirm('Excluir este usuário?')"><button class="delete" type="submit">Excluir</button></form></div>`).join('');
+    }
+    function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+    loadUsers();
+  </script>
+</body>
+</html>

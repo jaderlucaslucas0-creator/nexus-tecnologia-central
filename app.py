@@ -7,11 +7,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__, static_folder="src", static_url_path="/src")
 
-# Configure these values in Render Environment Variables.
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-DB_PATH = os.environ.get("DATABASE_PATH", "nexus.db")
+DB_PATH = os.environ.get("DATABASE_PATH", "/var/data/nexus.db")
 
 
 def get_db():
@@ -21,6 +20,9 @@ def get_db():
 
 
 def init_db():
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     db = get_db()
     db.execute(
         """
@@ -45,9 +47,7 @@ def credentials_configured():
 
 def authenticate_user(username, password):
     if credentials_configured():
-        valid_username = hmac.compare_digest(username, ADMIN_USERNAME)
-        valid_password = hmac.compare_digest(password, ADMIN_PASSWORD)
-        if valid_username and valid_password:
+        if hmac.compare_digest(username, ADMIN_USERNAME) and hmac.compare_digest(password, ADMIN_PASSWORD):
             return True
 
     db = get_db()
@@ -84,6 +84,17 @@ def dashboard():
     return send_from_directory(".", "dashboard.html")
 
 
+@app.get("/api/usuarios")
+def listar_usuarios():
+    if not session.get("authenticated"):
+        return {"success": False, "message": "Não autorizado."}, 401
+
+    db = get_db()
+    users = db.execute("SELECT id, username, created_at FROM users ORDER BY username").fetchall()
+    db.close()
+    return jsonify({"success": True, "users": [dict(user) for user in users]})
+
+
 @app.route("/usuarios", methods=["GET", "POST"])
 def usuarios():
     if not session.get("authenticated"):
@@ -97,11 +108,13 @@ def usuarios():
     confirm_password = request.form.get("confirm_password", "")
 
     if len(username) < 3:
-        return jsonify(success=False, message="O usuário precisa ter pelo menos 3 caracteres."), 400
+        return {"success": False, "message": "O usuário precisa ter pelo menos 3 caracteres."}, 400
     if len(password) < 6:
-        return jsonify(success=False, message="A senha precisa ter pelo menos 6 caracteres."), 400
+        return {"success": False, "message": "A senha precisa ter pelo menos 6 caracteres."}, 400
     if password != confirm_password:
-        return jsonify(success=False, message="As senhas não conferem."), 400
+        return {"success": False, "message": "As senhas não conferem."}, 400
+    if credentials_configured() and hmac.compare_digest(username, ADMIN_USERNAME):
+        return {"success": False, "message": "Esse usuário já está reservado para o administrador."}, 409
 
     db = get_db()
     try:
@@ -111,11 +124,28 @@ def usuarios():
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify(success=False, message="Esse usuário já existe."), 409
+        return {"success": False, "message": "Esse usuário já existe."}, 409
     finally:
         db.close()
 
-    return jsonify(success=True, message="Usuário criado com sucesso!")
+    return {"success": True, "message": "Usuário criado com sucesso!"}
+
+
+@app.post("/usuarios/<int:user_id>/excluir")
+def excluir_usuario(user_id):
+    if not session.get("authenticated"):
+        return {"success": False, "message": "Não autorizado."}, 401
+
+    db = get_db()
+    user = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        db.close()
+        return {"success": False, "message": "Usuário não encontrado."}, 404
+
+    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("dashboard"))
 
 
 @app.post("/logout")

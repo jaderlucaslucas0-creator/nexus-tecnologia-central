@@ -1,22 +1,41 @@
-import hmac, os, sqlite3
+import hmac, os, sqlite3, urllib.request, urllib.error, json
 from functools import wraps
 from pathlib import Path
 from flask import Flask, redirect, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
-app=Flask(__name__,static_folder="src",static_url_path="/src"); app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
-DB_PATH=Path(os.environ.get("DATABASE_PATH","nexus.db")); ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME",""); ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD","")
-def get_db(): c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
+app=Flask(__name__,static_folder="src",static_url_path="/src")
+app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
+DB_PATH=Path(os.environ.get("DATABASE_PATH","/var/data/nexus.db")); DB_PATH.parent.mkdir(parents=True,exist_ok=True)
+ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME",""); ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD","")
+RENDER_API_KEY=os.environ.get("RENDER_API_KEY",""); RENDER_SERVICE_ID=os.environ.get("RENDER_SERVICE_ID","")
+
+def get_db():
+ c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
+
 def init_db():
  c=get_db(); c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"); c.execute("CREATE TABLE IF NOT EXISTS systems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
  try:c.execute("ALTER TABLE systems ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
  except sqlite3.OperationalError:pass
+ try:c.execute("ALTER TABLE systems ADD COLUMN render_service_id TEXT DEFAULT ''")
+ except sqlite3.OperationalError:pass
  if ADMIN_USERNAME and ADMIN_PASSWORD and not c.execute("SELECT id FROM users WHERE username=?",(ADMIN_USERNAME,)).fetchone(): c.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)",(ADMIN_USERNAME,generate_password_hash(ADMIN_PASSWORD),"Administrador"))
  c.commit();c.close()
 init_db()
+
 def login_required(view):
  @wraps(view)
  def wrapped(*a,**k): return view(*a,**k) if session.get("authenticated") else redirect(url_for("home"))
  return wrapped
+
+def render_action(service_id,action):
+ if not RENDER_API_KEY or not service_id:return False,"Configure RENDER_API_KEY e o ID do serviço Render para controlar o servidor."
+ url=f"https://api.render.com/v1/services/{service_id}/{action}"
+ req=urllib.request.Request(url,method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
+ try:
+  with urllib.request.urlopen(req,timeout=15) as r:return True,r.status
+ except urllib.error.HTTPError as e:return False,f"Render retornou HTTP {e.code}"
+ except Exception as e:return False,str(e)
+
 @app.get("/")
 def home(): return redirect(url_for("dashboard")) if session.get("authenticated") else send_from_directory(".","index.html")
 @app.get("/criar-conta")
@@ -56,27 +75,31 @@ def excluir_usuario(user_id):
 @app.post("/sistemas/criar")
 @login_required
 def criar_sistema():
- n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip()
+ n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip();sid=request.form.get("render_service_id","").strip()
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
- c=get_db();c.execute("INSERT INTO systems(name,url,description,enabled) VALUES(?,?,?,1)",(n,url,d));c.commit();c.close();return redirect(url_for("sistemas"))
+ c=get_db();c.execute("INSERT INTO systems(name,url,description,enabled,render_service_id) VALUES(?,?,?,1,?)",(n,url,d,sid));c.commit();c.close();return redirect(url_for("sistemas"))
 @app.post("/sistemas/<int:system_id>/editar")
 @login_required
 def editar_sistema(system_id):
- n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip()
+ n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip();sid=request.form.get("render_service_id","").strip()
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
- c=get_db();c.execute("UPDATE systems SET name=?,url=?,description=? WHERE id=?",(n,url,d,system_id));c.commit();c.close();return {"success":True}
+ c=get_db();c.execute("UPDATE systems SET name=?,url=?,description=?,render_service_id=? WHERE id=?",(n,url,d,sid,system_id));c.commit();c.close();return {"success":True}
 @app.get("/api/sistemas")
 @login_required
 def listar_sistemas():
- c=get_db();rows=c.execute("SELECT id,name,url,description,enabled,created_at FROM systems ORDER BY id DESC").fetchall();c.close();return {"systems":[dict(x) for x in rows]}
+ c=get_db();rows=c.execute("SELECT id,name,url,description,enabled,render_service_id,created_at FROM systems ORDER BY id DESC").fetchall();c.close();return {"systems":[dict(x) for x in rows]}
 @app.post("/sistemas/<int:system_id>/toggle")
 @login_required
 def toggle_sistema(system_id):
- c=get_db();row=c.execute("SELECT enabled FROM systems WHERE id=?",(system_id,)).fetchone()
+ c=get_db();row=c.execute("SELECT enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
  if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
- value=0 if row["enabled"] else 1;c.execute("UPDATE systems SET enabled=? WHERE id=?",(value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(value)}
+ new_value=0 if row["enabled"] else 1
+ if row["render_service_id"]:
+  ok,msg=render_action(row["render_service_id"],"resume" if new_value else "suspend")
+  if not ok:c.close();return {"success":False,"message":msg},502
+ c.execute("UPDATE systems SET enabled=? WHERE id=?",(new_value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value)}
 @app.post("/sistemas/excluir/<int:system_id>")
 @login_required
 def excluir_sistema(system_id):

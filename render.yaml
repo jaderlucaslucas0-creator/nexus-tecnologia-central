@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: render-nexus-tecnologia
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_USER
+        value: admin
+      - key: ACCESS_PASSWORD
+        sync: false

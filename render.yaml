@@ -4,6 +4,13 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/nexus.db
+      - key: SECRET_KEY
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
     disk:
       name: nexus-data
       mountPath: /var/data

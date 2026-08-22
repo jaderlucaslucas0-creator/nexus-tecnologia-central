@@ -50,11 +50,23 @@ def test_core_flow():
     assert systems[0]["enabled"] == 1
 
     system_id = systems[0]["id"]
-    response = client.post(f"/sistemas/{system_id}/editar", data={"name": "Seven Store", "url": "https://seven-store.onrender.com/", "description": "Atualizado", "render_service_id": ""})
+    response = client.post(
+        f"/sistemas/{system_id}/editar",
+        data={
+            "name": "Seven Store",
+            "url": "https://seven-store.onrender.com/",
+            "description": "Atualizado",
+            "render_service_id": "",
+        },
+    )
     assert response.status_code == 200
 
     response = client.post(f"/sistemas/excluir/{system_id}")
     assert response.status_code == 200
     assert client.get("/api/sistemas").get_json()["systems"] == []
 
+
+if __name__ == "__main__":
+    test_core_flow()
     tmp_dir.cleanup()
+    print("Nexus Tecnologia: fluxo principal OK")

@@ -17,6 +17,6 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Verificar sintaxe Python
-        run: python -m py_compile app.py
-      - name: Testar inicialização do Flask
-        run: python -c "import app; assert app.app.name == 'app'; print('Nexus Tecnologia OK')"
+        run: python -m py_compile app.py test_app.py
+      - name: Testar fluxo principal
+        run: python test_app.py

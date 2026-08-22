@@ -1,6 +1,7 @@
 import hmac
 import json
 import os
+import shutil
 import sqlite3
 import time
 import urllib.error
@@ -24,25 +25,37 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
 )
 
-requested_db = Path(os.environ.get("DATABASE_PATH", "/tmp/nexus.db"))
-try:
-    requested_db.parent.mkdir(parents=True, exist_ok=True)
-    test_file = requested_db.parent / ".nexus_write_test"
-    test_file.touch(exist_ok=True)
-    test_file.unlink(missing_ok=True)
-    DB_PATH = requested_db
-except (PermissionError, OSError):
-    DB_PATH = Path("/tmp/nexus.db")
 
+def choose_database_path():
+    """Choose a persistent database location on Render, with safe local fallback."""
+    configured = os.environ.get("DATABASE_PATH", "").strip()
+    candidates = [Path(configured)] if configured else []
+    if not configured:
+        candidates.extend([Path("/var/data/nexus.db"), BASE_DIR / "data" / "nexus.db", Path("/tmp/nexus.db")])
+    for candidate in candidates:
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            test_file = candidate.parent / ".nexus_write_test"
+            test_file.touch(exist_ok=True)
+            test_file.unlink(missing_ok=True)
+            return candidate
+        except (PermissionError, OSError):
+            continue
+    return Path("/tmp/nexus.db")
+
+
+DB_PATH = choose_database_path()
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "").strip()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "").strip()
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=15000")
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
@@ -56,7 +69,7 @@ def init_db():
         except sqlite3.OperationalError:
             pass
     if ADMIN_USERNAME and ADMIN_PASSWORD and not conn.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,)).fetchone():
-        conn.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)", (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD), "Administrador"))
+        conn.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)", (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD)))
     conn.commit()
     conn.close()
 
@@ -186,8 +199,13 @@ def criar_usuario():
         conn.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)", (username, generate_password_hash(password), name))
         conn.commit()
     except sqlite3.IntegrityError:
+        conn.rollback()
         conn.close()
         return json_error("Esse usuário já existe.", 409)
+    except sqlite3.Error as exc:
+        conn.rollback()
+        conn.close()
+        return json_error(f"Erro ao salvar a conta no banco de dados: {exc}", 500)
     conn.close()
     return jsonify(success=True, message="Conta criada com sucesso.")
 
@@ -363,8 +381,9 @@ def health():
     try:
         conn = get_db()
         conn.execute("SELECT 1").fetchone()
+        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         conn.close()
-        return jsonify(status="ok", app="Nexus Tecnologia", database=str(DB_PATH), render_configured=bool(RENDER_API_KEY))
+        return jsonify(status="ok", app="Nexus Tecnologia", database=str(DB_PATH), users=user_count, persistent=str(DB_PATH).startswith("/var/data"), render_configured=bool(RENDER_API_KEY))
     except Exception as exc:
         return jsonify(status="error", app="Nexus Tecnologia", error=str(exc)), 500
 

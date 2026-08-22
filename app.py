@@ -27,13 +27,12 @@ def login_required(view):
  return wrapped
 
 def render_request(path,method="GET"):
- if not RENDER_API_KEY: raise RuntimeError("RENDER_API_KEY não está configurada no serviço Nexus.")
- req=urllib.request.Request("https://api.render.com/v1"+path,method=method,headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
+ if not RENDER_API_KEY: raise RuntimeError("RENDER_API_KEY não está configurada diretamente no serviço Nexus Tecnologia.")
+ req=urllib.request.Request("https://api.render.com/v1"+path,method=method,headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json","Content-Type":"application/json"})
  with urllib.request.urlopen(req,timeout=20) as r:
   body=r.read().decode("utf-8"); return r.status,json.loads(body) if body else {}
 
-def service_from_payload(item):
- return item.get("service",item) if isinstance(item,dict) else {}
+def service_from_payload(item): return item.get("service",item) if isinstance(item,dict) else {}
 
 def list_render_services():
  _,data=render_request("/services?limit=100")
@@ -41,19 +40,27 @@ def list_render_services():
  return [service_from_payload(x) for x in items]
 
 def get_render_service(service_id):
- _,data=render_request("/services/"+urllib.parse.quote(service_id,safe=""))
- return service_from_payload(data)
+ _,data=render_request("/services/"+urllib.parse.quote(service_id,safe="")); return service_from_payload(data)
 
 def render_action(service_id,action):
- if not RENDER_API_KEY:return False,"O RENDER_API_KEY não está configurado no serviço Nexus."
- if not service_id:return False,"Selecione o serviço do Render deste sistema antes de ligar/desligar."
- req=urllib.request.Request(f"https://api.render.com/v1/services/{urllib.parse.quote(service_id,safe='')}/{action}",method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
+ if not RENDER_API_KEY:return False,"RENDER_API_KEY não está configurada diretamente no serviço Nexus Tecnologia."
+ if not service_id:return False,"Não encontrei um serviço Render vinculado a este sistema."
+ req=urllib.request.Request(f"https://api.render.com/v1/services/{urllib.parse.quote(service_id,safe='')}/{action}",method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json","Content-Type":"application/json"})
  try:
   with urllib.request.urlopen(req,timeout=20) as r:return True,r.status
  except urllib.error.HTTPError as e:
-  detail=e.read().decode("utf-8",errors="replace")
-  return False,f"Render retornou HTTP {e.code}. {detail[:250]}"
+  detail=e.read().decode("utf-8",errors="replace");return False,f"Render retornou HTTP {e.code}. {detail[:400]}"
  except Exception as e:return False,f"Falha ao comunicar com o Render: {e}"
+
+def find_matching_service(system_name,system_url):
+ services=list_render_services(); name=(system_name or '').lower().strip(); host=urllib.parse.urlparse(system_url or '').netloc.lower().replace('www.','')
+ def norm(v):return ''.join(ch for ch in (v or '').lower() if ch.isalnum())
+ nn=norm(name); hh=norm(host.split('.')[0] if host else '')
+ for s in services:
+  sn=norm(s.get('name','')); su=urllib.parse.urlparse(s.get('url') or '').netloc.lower(); su=norm(su.split('.')[0] if su else '')
+  if sn and (sn==nn or sn in nn or nn in sn):return s
+  if hh and su and (hh==su or hh in su or su in hh):return s
+ return None
 
 @app.get("/")
 def home(): return redirect(url_for("dashboard")) if session.get("authenticated") else send_from_directory(".","index.html")
@@ -97,6 +104,10 @@ def criar_sistema():
  n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip();sid=request.form.get("render_service_id","").strip()
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
+ if not sid and RENDER_API_KEY:
+  try:
+   s=find_matching_service(n,url);sid=s.get('id','') if s else ''
+  except Exception:pass
  c=get_db();c.execute("INSERT INTO systems(name,url,description,enabled,render_service_id) VALUES(?,?,?,1,?)",(n,url,d,sid));c.commit();c.close();return redirect(url_for("sistemas"))
 @app.post("/sistemas/<int:system_id>/editar")
 @login_required
@@ -104,6 +115,10 @@ def editar_sistema(system_id):
  n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip();sid=request.form.get("render_service_id","").strip()
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
+ if not sid and RENDER_API_KEY:
+  try:
+   s=find_matching_service(n,url);sid=s.get('id','') if s else ''
+  except Exception:pass
  c=get_db();c.execute("UPDATE systems SET name=?,url=?,description=?,render_service_id=? WHERE id=?",(n,url,d,sid,system_id));c.commit();c.close();return {"success":True}
 @app.get("/api/sistemas")
 @login_required
@@ -113,28 +128,31 @@ def listar_sistemas():
 @login_required
 def api_render_services():
  try:
-  services=list_render_services()
-  return {"configured":True,"services":[{"id":s.get("id"),"name":s.get("name"),"type":s.get("type"),"url":s.get("url"),"suspended":s.get("suspended")} for s in services if s.get("id") and s.get("name")]}
- except urllib.error.HTTPError as e:return {"configured":True,"message":f"Render retornou HTTP {e.code}."},502
+  services=list_render_services();return {"configured":True,"services":[{"id":s.get("id"),"name":s.get("name"),"type":s.get("type"),"url":s.get("url"),"suspended":s.get("suspended")} for s in services if s.get("id") and s.get("name")]}
+ except urllib.error.HTTPError as e:return {"configured":True,"message":f"Render retornou HTTP {e.code}. Verifique se a RENDER_API_KEY é uma chave válida."},502
  except Exception as e:return {"configured":False,"message":str(e)},503
-@app.get("/api/render-services/<service_id>")
-@login_required
-def api_render_service(service_id):
- try:
-  s=get_render_service(service_id);return {"id":s.get("id"),"name":s.get("name"),"suspended":s.get("suspended"),"url":s.get("url")}
- except Exception as e:return {"message":str(e)},502
 @app.post("/sistemas/<int:system_id>/toggle")
 @login_required
 def toggle_sistema(system_id):
- c=get_db();row=c.execute("SELECT id,name,enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
+ c=get_db();row=c.execute("SELECT id,name,url,enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
  if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
- if not RENDER_API_KEY:c.close();return {"success":False,"message":"RENDER_API_KEY não está disponível no serviço Nexus. Configure a variável no Environment do serviço, não apenas como um nome de ambiente."},503
+ if not RENDER_API_KEY:c.close();return {"success":False,"message":"A RENDER_API_KEY não está disponível diretamente no serviço Nexus Tecnologia. Adicione-a em Environment > Environment Variables do serviço nexus-tecnologia-central."},503
  service_id=row["render_service_id"]
  if not service_id:
-  c.close();return {"success":False,"message":"Este sistema ainda não está vinculado a um serviço do Render. Clique em Editar e selecione o serviço correto."},400
+  try:
+   s=find_matching_service(row['name'],row['url']);service_id=s.get('id','') if s else ''
+  except Exception as e:
+   c.close();return {"success":False,"message":f"Não consegui localizar o serviço no Render: {e}"},502
+  if service_id:c.execute("UPDATE systems SET render_service_id=? WHERE id=?",(service_id,system_id));c.commit()
+ if not service_id:c.close();return {"success":False,"message":"Não encontrei automaticamente o serviço do Render. Edite o sistema e selecione o serviço correto."},400
  new_value=0 if row["enabled"] else 1
  ok,msg=render_action(service_id,"resume" if new_value else "suspend")
  if not ok:c.close();return {"success":False,"message":msg},502
+ try:
+  current=get_render_service(service_id);suspended=bool(current.get('suspended'))
+  if (not new_value and not suspended) or (new_value and suspended):
+   c.close();return {"success":False,"message":"O Render recebeu o comando, mas o estado ainda não foi confirmado. Aguarde alguns segundos e tente novamente."},409
+ except Exception:pass
  c.execute("UPDATE systems SET enabled=? WHERE id=?",(new_value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value),"render_controlled":True}
 @app.post("/sistemas/excluir/<int:system_id>")
 @login_required

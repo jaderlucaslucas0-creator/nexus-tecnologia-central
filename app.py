@@ -1,7 +1,6 @@
 import hmac
 import json
 import os
-import shutil
 import sqlite3
 import time
 import urllib.error
@@ -27,11 +26,8 @@ app.config.update(
 
 
 def choose_database_path():
-    """Choose a persistent database location on Render, with safe local fallback."""
     configured = os.environ.get("DATABASE_PATH", "").strip()
-    candidates = [Path(configured)] if configured else []
-    if not configured:
-        candidates.extend([Path("/var/data/nexus.db"), BASE_DIR / "data" / "nexus.db", Path("/tmp/nexus.db")])
+    candidates = [Path(configured)] if configured else [Path("/var/data/nexus.db"), BASE_DIR / "data" / "nexus.db", Path("/tmp/nexus.db")]
     for candidate in candidates:
         try:
             candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -174,6 +170,8 @@ def criar_conta_page():
 def login():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
+    if not username or not password:
+        return json_error("Informe usuário e senha.")
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     conn.close()
@@ -237,6 +235,43 @@ def listar_usuarios():
     return jsonify(users=[dict(row) for row in rows])
 
 
+@app.post("/usuarios/editar/<int:user_id>")
+@login_required
+def editar_usuario(user_id):
+    name = request.form.get("name", "").strip()
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    if not name or not username or len(name) > 120 or len(username) > 80:
+        return json_error("Nome ou usuário inválido.")
+    conn = get_db()
+    current = conn.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
+    if not current:
+        conn.close()
+        return json_error("Usuário não encontrado.", 404)
+    try:
+        if password:
+            if len(password) < 6:
+                conn.close()
+                return json_error("A nova senha precisa ter pelo menos 6 caracteres.")
+            conn.execute("UPDATE users SET name=?,username=?,password_hash=? WHERE id=?", (name, username, generate_password_hash(password), user_id))
+        else:
+            conn.execute("UPDATE users SET name=?,username=? WHERE id=?", (name, username, user_id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return json_error("Esse usuário já existe.", 409)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    if hmac.compare_digest(current["username"], session.get("username", "")):
+        session["username"] = username
+        session["name"] = name
+    return jsonify(success=True, message="Usuário atualizado com sucesso.")
+
+
 @app.post("/usuarios/excluir/<int:user_id>")
 @login_required
 def excluir_usuario(user_id):
@@ -262,9 +297,14 @@ def criar_sistema():
         return json_error("Informe o nome e a URL do sistema.")
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    if len(name) > 120 or len(url) > 500 or len(description) > 500:
+        return json_error("Dados do sistema muito longos.")
     if RENDER_API_KEY and not service_id:
-        service = find_matching_service(name, url)
-        service_id = service.get("id", "") if service else ""
+        try:
+            service = find_matching_service(name, url)
+            service_id = service.get("id", "") if service else ""
+        except Exception:
+            service_id = ""
     conn = get_db()
     conn.execute("INSERT INTO systems(name,url,description,enabled,render_service_id) VALUES(?,?,?,1,?)", (name, url, description, service_id))
     conn.commit()
@@ -382,10 +422,26 @@ def health():
         conn = get_db()
         conn.execute("SELECT 1").fetchone()
         user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        system_count = conn.execute("SELECT COUNT(*) FROM systems").fetchone()[0]
         conn.close()
-        return jsonify(status="ok", app="Nexus Tecnologia", database=str(DB_PATH), users=user_count, persistent=str(DB_PATH).startswith("/var/data"), render_configured=bool(RENDER_API_KEY))
+        return jsonify(status="ok", app="Nexus Tecnologia", users=user_count, systems=system_count, persistent=str(DB_PATH).startswith("/var/data"), render_configured=bool(RENDER_API_KEY))
     except Exception as exc:
         return jsonify(status="error", app="Nexus Tecnologia", error=str(exc)), 500
+
+
+@app.errorhandler(404)
+def not_found(_):
+    return jsonify(success=False, message="Página ou recurso não encontrado."), 404
+
+
+@app.errorhandler(413)
+def too_large(_):
+    return json_error("A requisição é muito grande.", 413)
+
+
+@app.errorhandler(500)
+def internal_error(_):
+    return json_error("Ocorreu um erro interno no servidor.", 500)
 
 
 if __name__ == "__main__":

@@ -1,16 +1,15 @@
-import hmac, os, sqlite3, urllib.request, urllib.error
+import hmac, os, sqlite3, urllib.request, urllib.error, urllib.parse, json
 from functools import wraps
 from pathlib import Path
 from flask import Flask, redirect, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 app=Flask(__name__,static_folder="src",static_url_path="/src")
 app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
+app.permanent_session_lifetime=60*60*24*30
 DB_PATH=Path(os.environ.get("DATABASE_PATH","/var/data/nexus.db")); DB_PATH.parent.mkdir(parents=True,exist_ok=True)
-ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME",""); ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD","")
-RENDER_API_KEY=os.environ.get("RENDER_API_KEY","")
+ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME",""); ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD",""); RENDER_API_KEY=os.environ.get("RENDER_API_KEY","")
 
-def get_db():
- c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
+def get_db(): c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
 
 def init_db():
  c=get_db(); c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"); c.execute("CREATE TABLE IF NOT EXISTS systems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
@@ -26,12 +25,29 @@ def login_required(view):
  def wrapped(*a,**k): return view(*a,**k) if session.get("authenticated") else redirect(url_for("home"))
  return wrapped
 
+def render_request(path,method="GET"):
+ req=urllib.request.Request("https://api.render.com/v1"+path,method=method,headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
+ with urllib.request.urlopen(req,timeout=20) as r:
+  body=r.read().decode("utf-8"); return r.status,json.loads(body) if body else {}
+
+def find_render_service(system_name):
+ if not RENDER_API_KEY:return None
+ try:
+  _,data=render_request("/services?name="+urllib.parse.quote(system_name)+"&limit=100")
+  items=data if isinstance(data,list) else data.get("services",[])
+  for item in items:
+   service=item.get("service",item)
+   if str(service.get("name","")).strip().lower()==system_name.strip().lower(): return service.get("id")
+ except Exception: pass
+ return None
+
 def render_action(service_id,action):
- if not RENDER_API_KEY or not service_id:return False,"Configure a chave da API do Render e o ID do serviço para controlar este servidor."
+ if not RENDER_API_KEY:return False,"Configure RENDER_API_KEY nas variáveis do Render."
+ if not service_id:return False,"Informe o ID do serviço no Render ou use um nome de serviço igual ao nome cadastrado."
  req=urllib.request.Request(f"https://api.render.com/v1/services/{service_id}/{action}",method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
  try:
   with urllib.request.urlopen(req,timeout=20) as r:return True,r.status
- except urllib.error.HTTPError as e:return False,f"Render retornou HTTP {e.code}. Verifique a API Key e o ID do serviço."
+ except urllib.error.HTTPError as e:return False,f"Render retornou HTTP {e.code}. Verifique a API Key, permissões e ID do serviço."
  except Exception as e:return False,f"Falha ao comunicar com o Render: {e}"
 
 @app.get("/")
@@ -41,7 +57,7 @@ def criar_conta_page(): return send_from_directory(".","criar-conta.html")
 @app.post("/login")
 def login():
  u=request.form.get("username","").strip();p=request.form.get("password","");c=get_db();user=c.execute("SELECT * FROM users WHERE username=?",(u,)).fetchone();c.close()
- if user and check_password_hash(user["password_hash"],p):session.clear();session.update(authenticated=True,username=user["username"],name=user["name"]);return redirect(url_for("dashboard"))
+ if user and check_password_hash(user["password_hash"],p):session.clear();session.permanent=True;session.update(authenticated=True,username=user["username"],name=user["name"]);return redirect(url_for("dashboard"))
  return {"success":False,"message":"Usuário ou senha incorretos."},401
 @app.post("/usuarios/criar")
 def criar_usuario():
@@ -91,13 +107,13 @@ def listar_sistemas():
 @app.post("/sistemas/<int:system_id>/toggle")
 @login_required
 def toggle_sistema(system_id):
- c=get_db();row=c.execute("SELECT enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
+ c=get_db();row=c.execute("SELECT id,name,enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
  if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
- new_value=0 if row["enabled"] else 1
- if row["render_service_id"]:
-  ok,msg=render_action(row["render_service_id"],"resume" if new_value else "suspend")
+ new_value=0 if row["enabled"] else 1; service_id=row["render_service_id"] or find_render_service(row["name"])
+ if RENDER_API_KEY:
+  ok,msg=render_action(service_id,"resume" if new_value else "suspend")
   if not ok:c.close();return {"success":False,"message":msg},502
- c.execute("UPDATE systems SET enabled=? WHERE id=?",(new_value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value)}
+ c.execute("UPDATE systems SET enabled=?,render_service_id=COALESCE(NULLIF(render_service_id,''),?) WHERE id=?",(new_value,service_id or "",system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value),"render_controlled":bool(service_id and RENDER_API_KEY)}
 @app.post("/sistemas/excluir/<int:system_id>")
 @login_required
 def excluir_sistema(system_id):

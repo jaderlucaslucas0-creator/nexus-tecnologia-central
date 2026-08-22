@@ -7,7 +7,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app=Flask(__name__,static_folder="src",static_url_path="/src")
 app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
 app.permanent_session_lifetime=60*60*24*30
-_requested_db=Path(os.environ.get("DATABASE_PATH","/var/data/nexus.db"))
+# Render Persistent Disk: configure DATABASE_PATH=/var/data/nexus.db.
+# If the disk is not mounted yet, automatically fall back to /tmp so the app can boot.
+_requested_db=Path(os.environ.get("DATABASE_PATH","/tmp/nexus.db"))
 try:
     _requested_db.parent.mkdir(parents=True,exist_ok=True)
     _test=_requested_db.parent/".nexus_write_test"

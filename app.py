@@ -1,163 +1,373 @@
-import hmac, os, sqlite3, urllib.request, urllib.error, urllib.parse, json
+import hmac
+import json
+import os
+import sqlite3
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from functools import wraps
 from pathlib import Path
-from flask import Flask, redirect, request, send_from_directory, session, url_for
+
+from flask import Flask, jsonify, redirect, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-app=Flask(__name__,static_folder="src",static_url_path="/src")
-app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
-app.permanent_session_lifetime=60*60*24*30
-# Render Persistent Disk: configure DATABASE_PATH=/var/data/nexus.db.
-# If the disk is not mounted yet, automatically fall back to /tmp so the app can boot.
-_requested_db=Path(os.environ.get("DATABASE_PATH","/tmp/nexus.db"))
-try:
-    _requested_db.parent.mkdir(parents=True,exist_ok=True)
-    _test=_requested_db.parent/".nexus_write_test"
-    _test.touch(exist_ok=True); _test.unlink(missing_ok=True)
-    DB_PATH=_requested_db
-except (PermissionError,OSError):
-    DB_PATH=Path("/tmp/nexus.db")
-ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME",""); ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD",""); RENDER_API_KEY=os.environ.get("RENDER_API_KEY","")
+BASE_DIR = Path(__file__).resolve().parent
+app = Flask(__name__, static_folder="src", static_url_path="/src")
+SECRET_KEY = os.environ.get("SECRET_KEY") or os.urandom(32).hex()
+app.secret_key = SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") != "0",
+    MAX_CONTENT_LENGTH=1 * 1024 * 1024,
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
+)
 
-def get_db(): c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
+requested_db = Path(os.environ.get("DATABASE_PATH", "/tmp/nexus.db"))
+try:
+    requested_db.parent.mkdir(parents=True, exist_ok=True)
+    test_file = requested_db.parent / ".nexus_write_test"
+    test_file.touch(exist_ok=True)
+    test_file.unlink(missing_ok=True)
+    DB_PATH = requested_db
+except (PermissionError, OSError):
+    DB_PATH = Path("/tmp/nexus.db")
+
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "").strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "").strip()
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=15000")
+    return conn
+
 
 def init_db():
- c=get_db(); c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"); c.execute("CREATE TABLE IF NOT EXISTS systems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
- for col,typ in [("enabled","INTEGER NOT NULL DEFAULT 1"),("render_service_id","TEXT DEFAULT ''")]:
-  try:c.execute(f"ALTER TABLE systems ADD COLUMN {col} {typ}")
-  except sqlite3.OperationalError:pass
- if ADMIN_USERNAME and ADMIN_PASSWORD and not c.execute("SELECT id FROM users WHERE username=?",(ADMIN_USERNAME,)).fetchone(): c.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)",(ADMIN_USERNAME,generate_password_hash(ADMIN_PASSWORD),"Administrador"))
- c.commit();c.close()
+    conn = get_db()
+    conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    conn.execute("CREATE TABLE IF NOT EXISTS systems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    for column, definition in (("enabled", "INTEGER NOT NULL DEFAULT 1"), ("render_service_id", "TEXT DEFAULT ''")):
+        try:
+            conn.execute(f"ALTER TABLE systems ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass
+    if ADMIN_USERNAME and ADMIN_PASSWORD and not conn.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,)).fetchone():
+        conn.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)", (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD), "Administrador"))
+    conn.commit()
+    conn.close()
+
+
 init_db()
 
+
 def login_required(view):
- @wraps(view)
- def wrapped(*a,**k): return view(*a,**k) if session.get("authenticated") else redirect(url_for("home"))
- return wrapped
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("authenticated"):
+            return redirect(url_for("home"))
+        return view(*args, **kwargs)
+    return wrapped
 
-def render_request(path,method="GET"):
- if not RENDER_API_KEY: raise RuntimeError("RENDER_API_KEY não está configurada diretamente no serviço Nexus Tecnologia.")
- req=urllib.request.Request("https://api.render.com/v1"+path,method=method,headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json","Content-Type":"application/json"})
- with urllib.request.urlopen(req,timeout=20) as r:
-  body=r.read().decode("utf-8"); return r.status,json.loads(body) if body else {}
 
-def service_from_payload(item): return item.get("service",item) if isinstance(item,dict) else {}
+def json_error(message, status=400):
+    return jsonify(success=False, message=message), status
+
+
+def render_request(path, method="GET"):
+    if not RENDER_API_KEY:
+        raise RuntimeError("RENDER_API_KEY não está configurada no serviço Nexus Tecnologia.")
+    req = urllib.request.Request("https://api.render.com/v1" + path, method=method, headers={"Authorization": f"Bearer {RENDER_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as response:
+        body = response.read().decode("utf-8")
+        return response.status, json.loads(body) if body else {}
+
+
+def service_from_payload(item):
+    return item.get("service", item) if isinstance(item, dict) else {}
+
+
 def list_render_services():
- _,data=render_request("/services?limit=100"); items=data if isinstance(data,list) else data.get("services",[]); return [service_from_payload(x) for x in items]
+    _, data = render_request("/services?limit=100")
+    items = data if isinstance(data, list) else data.get("services", [])
+    return [service_from_payload(item) for item in items]
+
+
 def get_render_service(service_id):
- _,data=render_request("/services/"+urllib.parse.quote(service_id,safe="")); return service_from_payload(data)
-def render_action(service_id,action):
- if not RENDER_API_KEY:return False,"RENDER_API_KEY não está configurada diretamente no serviço Nexus Tecnologia."
- if not service_id:return False,"Não encontrei um serviço Render vinculado a este sistema."
- req=urllib.request.Request(f"https://api.render.com/v1/services/{urllib.parse.quote(service_id,safe='')}/{action}",method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json","Content-Type":"application/json"})
- try:
-  with urllib.request.urlopen(req,timeout=20) as r:return True,r.status
- except urllib.error.HTTPError as e:
-  detail=e.read().decode("utf-8",errors="replace");return False,f"Render retornou HTTP {e.code}. {detail[:400]}"
- except Exception as e:return False,f"Falha ao comunicar com o Render: {e}"
-def find_matching_service(system_name,system_url):
- services=list_render_services(); name=(system_name or '').lower().strip(); host=urllib.parse.urlparse(system_url or '').netloc.lower().replace('www.','')
- def norm(v):return ''.join(ch for ch in (v or '').lower() if ch.isalnum())
- nn=norm(name); hh=norm(host.split('.')[0] if host else '')
- for s in services:
-  sn=norm(s.get('name','')); su=urllib.parse.urlparse(s.get('url') or '').netloc.lower(); su=norm(su.split('.')[0] if su else '')
-  if sn and (sn==nn or sn in nn or nn in sn):return s
-  if hh and su and (hh==su or hh in su or su in hh):return s
- return None
+    _, data = render_request("/services/" + urllib.parse.quote(service_id, safe=""))
+    return service_from_payload(data)
+
+
+def render_action(service_id, action):
+    if not RENDER_API_KEY:
+        return False, "RENDER_API_KEY não está configurada no serviço Nexus Tecnologia."
+    if not service_id:
+        return False, "Nenhum serviço Render está vinculado a este sistema."
+    req = urllib.request.Request(f"https://api.render.com/v1/services/{urllib.parse.quote(service_id, safe='')}/{action}", method="POST", headers={"Authorization": f"Bearer {RENDER_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            return True, response.status
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return False, f"Render retornou HTTP {exc.code}. {detail[:500]}"
+    except Exception as exc:
+        return False, f"Falha ao comunicar com o Render: {exc}"
+
+
+def find_matching_service(system_name, system_url):
+    services = list_render_services()
+    name_key = "".join(ch for ch in (system_name or "").lower() if ch.isalnum())
+    host = urllib.parse.urlparse(system_url or "").netloc.lower().replace("www.", "")
+    host_key = "".join(ch for ch in host.split(".")[0] if ch.isalnum()) if host else ""
+    for service in services:
+        service_name = "".join(ch for ch in (service.get("name", "")).lower() if ch.isalnum())
+        service_host = urllib.parse.urlparse(service.get("url") or "").netloc.lower()
+        service_host = "".join(ch for ch in service_host.split(".")[0] if ch.isalnum()) if service_host else ""
+        if service_name and (service_name == name_key or service_name in name_key or name_key in service_name):
+            return service
+        if host_key and service_host and (host_key == service_host or host_key in service_host or service_host in host_key):
+            return service
+    return None
+
+
+def sync_system_service(system_id, name, url):
+    try:
+        service = find_matching_service(name, url)
+        service_id = service.get("id", "") if service else ""
+    except Exception:
+        service_id = ""
+    if service_id:
+        conn = get_db()
+        conn.execute("UPDATE systems SET render_service_id=? WHERE id=?", (service_id, system_id))
+        conn.commit()
+        conn.close()
+    return service_id
+
 
 @app.get("/")
-def home(): return redirect(url_for("dashboard")) if session.get("authenticated") else send_from_directory(".","index.html")
+def home():
+    return redirect(url_for("dashboard")) if session.get("authenticated") else send_from_directory(BASE_DIR, "index.html")
+
+
 @app.get("/criar-conta")
-def criar_conta_page(): return send_from_directory(".","criar-conta.html")
+def criar_conta_page():
+    return send_from_directory(BASE_DIR, "criar-conta.html")
+
+
 @app.post("/login")
 def login():
- u=request.form.get("username","").strip();p=request.form.get("password","");c=get_db();user=c.execute("SELECT * FROM users WHERE username=?",(u,)).fetchone();c.close()
- if user and check_password_hash(user["password_hash"],p):session.clear();session.permanent=True;session.update(authenticated=True,username=user["username"],name=user["name"]);return redirect(url_for("dashboard"))
- return {"success":False,"message":"Usuário ou senha incorretos."},401
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    conn.close()
+    if user and check_password_hash(user["password_hash"], password):
+        session.clear()
+        session.permanent = True
+        session.update(authenticated=True, username=user["username"], name=user["name"])
+        return redirect(url_for("dashboard"))
+    return json_error("Usuário ou senha incorretos.", 401)
+
+
 @app.post("/usuarios/criar")
 def criar_usuario():
- n=request.form.get("name","").strip();u=request.form.get("username","").strip();p=request.form.get("password","")
- if not n or not u or len(p)<6:return {"success":False,"message":"Preencha nome, usuário e uma senha de pelo menos 6 caracteres."},400
- c=get_db()
- try:c.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)",(u,generate_password_hash(p),n));c.commit()
- except sqlite3.IntegrityError:c.close();return {"success":False,"message":"Esse usuário já existe."},409
- c.close();return {"success":True,"message":"Conta criada com sucesso."}
+    name = request.form.get("name", "").strip()
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    if not name or not username or len(password) < 6:
+        return json_error("Preencha nome, usuário e uma senha de pelo menos 6 caracteres.")
+    if len(username) > 80 or len(name) > 120:
+        return json_error("Nome ou usuário muito longo.")
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO users(username,password_hash,name) VALUES(?,?,?)", (username, generate_password_hash(password), name))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return json_error("Esse usuário já existe.", 409)
+    conn.close()
+    return jsonify(success=True, message="Conta criada com sucesso.")
+
+
 @app.get("/dashboard")
 @login_required
-def dashboard():return send_from_directory(".","dashboard.html")
+def dashboard():
+    return send_from_directory(BASE_DIR, "dashboard.html")
+
+
 @app.get("/usuarios")
 @login_required
-def usuarios():return send_from_directory(".","usuarios.html")
+def usuarios():
+    return send_from_directory(BASE_DIR, "usuarios.html")
+
+
 @app.get("/sistemas")
 @login_required
-def sistemas():return send_from_directory(".","sistemas.html")
+def sistemas():
+    return send_from_directory(BASE_DIR, "sistemas.html")
+
+
 @app.get("/api/usuarios")
 @login_required
 def listar_usuarios():
- c=get_db();rows=c.execute("SELECT id,name,username,created_at FROM users ORDER BY id").fetchall();c.close();return {"users":[dict(x) for x in rows]}
+    conn = get_db()
+    rows = conn.execute("SELECT id,name,username,created_at FROM users ORDER BY id").fetchall()
+    conn.close()
+    return jsonify(users=[dict(row) for row in rows])
+
+
 @app.post("/usuarios/excluir/<int:user_id>")
 @login_required
 def excluir_usuario(user_id):
- c=get_db();u=c.execute("SELECT username FROM users WHERE id=?",(user_id,)).fetchone()
- if u and hmac.compare_digest(u["username"],session.get("username","")):c.close();return {"success":False,"message":"Você não pode excluir o usuário conectado."},400
- c.execute("DELETE FROM users WHERE id=?",(user_id,));c.commit();c.close();return redirect(url_for("usuarios"))
+    conn = get_db()
+    user = conn.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
+    if user and hmac.compare_digest(user["username"], session.get("username", "")):
+        conn.close()
+        return json_error("Você não pode excluir o usuário conectado.")
+    conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+
 @app.post("/sistemas/criar")
 @login_required
 def criar_sistema():
- n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip();sid=request.form.get("render_service_id","").strip()
- if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
- if not url.startswith(("http://","https://")):url="https://"+url
- if not sid and RENDER_API_KEY:
-  try:s=find_matching_service(n,url);sid=s.get('id','') if s else ''
-  except Exception:pass
- c=get_db();c.execute("INSERT INTO systems(name,url,description,enabled,render_service_id) VALUES(?,?,?,1,?)",(n,url,d,sid));c.commit();c.close();return redirect(url_for("sistemas"))
+    name = request.form.get("name", "").strip()
+    url = request.form.get("url", "").strip()
+    description = request.form.get("description", "").strip()
+    service_id = request.form.get("render_service_id", "").strip()
+    if not name or not url:
+        return json_error("Informe o nome e a URL do sistema.")
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    if RENDER_API_KEY and not service_id:
+        service = find_matching_service(name, url)
+        service_id = service.get("id", "") if service else ""
+    conn = get_db()
+    conn.execute("INSERT INTO systems(name,url,description,enabled,render_service_id) VALUES(?,?,?,1,?)", (name, url, description, service_id))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+
 @app.post("/sistemas/<int:system_id>/editar")
 @login_required
 def editar_sistema(system_id):
- n=request.form.get("name","").strip();url=request.form.get("url","").strip();d=request.form.get("description","").strip();sid=request.form.get("render_service_id","").strip()
- if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
- if not url.startswith(("http://","https://")):url="https://"+url
- if not sid and RENDER_API_KEY:
-  try:s=find_matching_service(n,url);sid=s.get('id','') if s else ''
-  except Exception:pass
- c=get_db();c.execute("UPDATE systems SET name=?,url=?,description=?,render_service_id=? WHERE id=?",(n,url,d,sid,system_id));c.commit();c.close();return {"success":True}
+    name = request.form.get("name", "").strip()
+    url = request.form.get("url", "").strip()
+    description = request.form.get("description", "").strip()
+    service_id = request.form.get("render_service_id", "").strip()
+    if not name or not url:
+        return json_error("Informe o nome e a URL do sistema.")
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    conn = get_db()
+    if not conn.execute("SELECT id FROM systems WHERE id=?", (system_id,)).fetchone():
+        conn.close()
+        return json_error("Sistema não encontrado.", 404)
+    conn.execute("UPDATE systems SET name=?,url=?,description=?,render_service_id=? WHERE id=?", (name, url, description, service_id, system_id))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+
 @app.get("/api/sistemas")
 @login_required
 def listar_sistemas():
- c=get_db();rows=c.execute("SELECT id,name,url,description,enabled,render_service_id,created_at FROM systems ORDER BY id DESC").fetchall();c.close();return {"systems":[dict(x) for x in rows]}
+    conn = get_db()
+    rows = conn.execute("SELECT id,name,url,description,enabled,render_service_id,created_at FROM systems ORDER BY id DESC").fetchall()
+    conn.close()
+    return jsonify(systems=[dict(row) for row in rows])
+
+
 @app.get("/api/render-services")
 @login_required
 def api_render_services():
- try:
-  services=list_render_services();return {"configured":True,"services":[{"id":s.get("id"),"name":s.get("name"),"type":s.get("type"),"url":s.get("url"),"suspended":s.get("suspended")} for s in services if s.get("id") and s.get("name")]}
- except urllib.error.HTTPError as e:return {"configured":True,"message":f"Render retornou HTTP {e.code}. Verifique se a RENDER_API_KEY é uma chave válida."},502
- except Exception as e:return {"configured":False,"message":str(e)},503
+    if not RENDER_API_KEY:
+        return jsonify(configured=False, services=[], message="Adicione RENDER_API_KEY nas Environment Variables do Render."), 503
+    try:
+        services = list_render_services()
+        return jsonify(configured=True, services=[{"id": s.get("id"), "name": s.get("name"), "type": s.get("type"), "url": s.get("url"), "suspended": bool(s.get("suspended"))} for s in services if s.get("id") and s.get("name")])
+    except urllib.error.HTTPError as exc:
+        return jsonify(configured=True, services=[], message=f"Render retornou HTTP {exc.code}. Verifique a RENDER_API_KEY."), 502
+    except Exception as exc:
+        return jsonify(configured=False, services=[], message=str(exc)), 503
+
+
 @app.post("/sistemas/<int:system_id>/toggle")
 @login_required
 def toggle_sistema(system_id):
- c=get_db();row=c.execute("SELECT id,name,url,enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
- if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
- if not RENDER_API_KEY:c.close();return {"success":False,"message":"A RENDER_API_KEY não está disponível diretamente no serviço Nexus Tecnologia. Adicione-a em Environment > Environment Variables do serviço nexus-tecnologia-central."},503
- service_id=row["render_service_id"]
- if not service_id:
-  try:s=find_matching_service(row['name'],row['url']);service_id=s.get('id','') if s else ''
-  except Exception as e:c.close();return {"success":False,"message":f"Não consegui localizar o serviço no Render: {e}"},502
-  if service_id:c.execute("UPDATE systems SET render_service_id=? WHERE id=?",(service_id,system_id));c.commit()
- if not service_id:c.close();return {"success":False,"message":"Não encontrei automaticamente o serviço do Render. Edite o sistema e selecione o serviço correto."},400
- new_value=0 if row["enabled"] else 1
- ok,msg=render_action(service_id,"resume" if new_value else "suspend")
- if not ok:c.close();return {"success":False,"message":msg},502
- try:
-  current=get_render_service(service_id);suspended=bool(current.get('suspended'))
-  if (not new_value and not suspended) or (new_value and suspended):c.close();return {"success":False,"message":"O Render recebeu o comando, mas o estado ainda não foi confirmado. Aguarde alguns segundos e tente novamente."},409
- except Exception:pass
- c.execute("UPDATE systems SET enabled=? WHERE id=?",(new_value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value),"render_controlled":True}
+    conn = get_db()
+    row = conn.execute("SELECT id,name,url,render_service_id FROM systems WHERE id=?", (system_id,)).fetchone()
+    conn.close()
+    if not row:
+        return json_error("Sistema não encontrado.", 404)
+    if not RENDER_API_KEY:
+        return json_error("A RENDER_API_KEY não está configurada no serviço Nexus Tecnologia.", 503)
+    service_id = row["render_service_id"] or sync_system_service(system_id, row["name"], row["url"])
+    if not service_id:
+        return json_error("Não encontrei automaticamente o serviço no Render. Edite o sistema e selecione o serviço correto.")
+    try:
+        service = get_render_service(service_id)
+        currently_suspended = bool(service.get("suspended"))
+    except Exception as exc:
+        return json_error(f"Não consegui consultar o estado do Render: {exc}", 502)
+    action = "resume" if currently_suspended else "suspend"
+    desired_enabled = action == "resume"
+    ok, detail = render_action(service_id, action)
+    if not ok:
+        return json_error(str(detail), 502)
+    confirmed = False
+    final_suspended = currently_suspended
+    for _ in range(5):
+        time.sleep(1)
+        try:
+            current = get_render_service(service_id)
+            final_suspended = bool(current.get("suspended"))
+            if final_suspended == (not desired_enabled):
+                confirmed = True
+                break
+        except Exception:
+            continue
+    if not confirmed:
+        return json_error("O Render recebeu o comando, mas ainda não confirmou a mudança de estado. Aguarde alguns segundos e atualize.", 409)
+    conn = get_db()
+    conn.execute("UPDATE systems SET enabled=?,render_service_id=? WHERE id=?", (1 if desired_enabled else 0, service_id, system_id))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, enabled=desired_enabled, suspended=final_suspended, render_controlled=True)
+
+
 @app.post("/sistemas/excluir/<int:system_id>")
 @login_required
 def excluir_sistema(system_id):
- c=get_db();c.execute("DELETE FROM systems WHERE id=?",(system_id,));c.commit();c.close();return {"success":True}
+    conn = get_db()
+    conn.execute("DELETE FROM systems WHERE id=?", (system_id,))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+
 @app.post("/logout")
-def logout():session.clear();return redirect(url_for("home"))
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
+
+
 @app.get("/health")
-def health():return {"status":"ok","app":"Nexus Tecnologia","database":str(DB_PATH)}
-if __name__=="__main__":app.run(host="0.0.0.0",port=5000)
+def health():
+    try:
+        conn = get_db()
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+        return jsonify(status="ok", app="Nexus Tecnologia", database=str(DB_PATH), render_configured=bool(RENDER_API_KEY))
+    except Exception as exc:
+        return jsonify(status="error", app="Nexus Tecnologia", error=str(exc)), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))

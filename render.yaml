@@ -3,11 +3,16 @@ services:
     name: nexus-tecnologia-central
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --workers 1 --threads 4 --timeout 120 app:app
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_PATH
         value: /var/data/nexus.db
       - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
         sync: false
       - key: RENDER_API_KEY
         sync: false

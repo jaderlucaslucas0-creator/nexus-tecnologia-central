@@ -7,7 +7,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app=Flask(__name__,static_folder="src",static_url_path="/src")
 app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
 app.permanent_session_lifetime=60*60*24*30
-DB_PATH=Path(os.environ.get("DATABASE_PATH","/var/data/nexus.db")); DB_PATH.parent.mkdir(parents=True,exist_ok=True)
+_requested_db=Path(os.environ.get("DATABASE_PATH","/var/data/nexus.db"))
+try:
+    _requested_db.parent.mkdir(parents=True,exist_ok=True)
+    _test=_requested_db.parent/".nexus_write_test"
+    _test.touch(exist_ok=True); _test.unlink(missing_ok=True)
+    DB_PATH=_requested_db
+except (PermissionError,OSError):
+    DB_PATH=Path("/tmp/nexus.db")
 ADMIN_USERNAME=os.environ.get("ADMIN_USERNAME",""); ADMIN_PASSWORD=os.environ.get("ADMIN_PASSWORD",""); RENDER_API_KEY=os.environ.get("RENDER_API_KEY","")
 
 def get_db(): c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
@@ -33,15 +40,10 @@ def render_request(path,method="GET"):
   body=r.read().decode("utf-8"); return r.status,json.loads(body) if body else {}
 
 def service_from_payload(item): return item.get("service",item) if isinstance(item,dict) else {}
-
 def list_render_services():
- _,data=render_request("/services?limit=100")
- items=data if isinstance(data,list) else data.get("services",[])
- return [service_from_payload(x) for x in items]
-
+ _,data=render_request("/services?limit=100"); items=data if isinstance(data,list) else data.get("services",[]); return [service_from_payload(x) for x in items]
 def get_render_service(service_id):
  _,data=render_request("/services/"+urllib.parse.quote(service_id,safe="")); return service_from_payload(data)
-
 def render_action(service_id,action):
  if not RENDER_API_KEY:return False,"RENDER_API_KEY não está configurada diretamente no serviço Nexus Tecnologia."
  if not service_id:return False,"Não encontrei um serviço Render vinculado a este sistema."
@@ -51,7 +53,6 @@ def render_action(service_id,action):
  except urllib.error.HTTPError as e:
   detail=e.read().decode("utf-8",errors="replace");return False,f"Render retornou HTTP {e.code}. {detail[:400]}"
  except Exception as e:return False,f"Falha ao comunicar com o Render: {e}"
-
 def find_matching_service(system_name,system_url):
  services=list_render_services(); name=(system_name or '').lower().strip(); host=urllib.parse.urlparse(system_url or '').netloc.lower().replace('www.','')
  def norm(v):return ''.join(ch for ch in (v or '').lower() if ch.isalnum())
@@ -105,8 +106,7 @@ def criar_sistema():
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
  if not sid and RENDER_API_KEY:
-  try:
-   s=find_matching_service(n,url);sid=s.get('id','') if s else ''
+  try:s=find_matching_service(n,url);sid=s.get('id','') if s else ''
   except Exception:pass
  c=get_db();c.execute("INSERT INTO systems(name,url,description,enabled,render_service_id) VALUES(?,?,?,1,?)",(n,url,d,sid));c.commit();c.close();return redirect(url_for("sistemas"))
 @app.post("/sistemas/<int:system_id>/editar")
@@ -116,8 +116,7 @@ def editar_sistema(system_id):
  if not n or not url:return {"success":False,"message":"Informe o nome e a URL do sistema."},400
  if not url.startswith(("http://","https://")):url="https://"+url
  if not sid and RENDER_API_KEY:
-  try:
-   s=find_matching_service(n,url);sid=s.get('id','') if s else ''
+  try:s=find_matching_service(n,url);sid=s.get('id','') if s else ''
   except Exception:pass
  c=get_db();c.execute("UPDATE systems SET name=?,url=?,description=?,render_service_id=? WHERE id=?",(n,url,d,sid,system_id));c.commit();c.close();return {"success":True}
 @app.get("/api/sistemas")
@@ -139,10 +138,8 @@ def toggle_sistema(system_id):
  if not RENDER_API_KEY:c.close();return {"success":False,"message":"A RENDER_API_KEY não está disponível diretamente no serviço Nexus Tecnologia. Adicione-a em Environment > Environment Variables do serviço nexus-tecnologia-central."},503
  service_id=row["render_service_id"]
  if not service_id:
-  try:
-   s=find_matching_service(row['name'],row['url']);service_id=s.get('id','') if s else ''
-  except Exception as e:
-   c.close();return {"success":False,"message":f"Não consegui localizar o serviço no Render: {e}"},502
+  try:s=find_matching_service(row['name'],row['url']);service_id=s.get('id','') if s else ''
+  except Exception as e:c.close();return {"success":False,"message":f"Não consegui localizar o serviço no Render: {e}"},502
   if service_id:c.execute("UPDATE systems SET render_service_id=? WHERE id=?",(service_id,system_id));c.commit()
  if not service_id:c.close();return {"success":False,"message":"Não encontrei automaticamente o serviço do Render. Edite o sistema e selecione o serviço correto."},400
  new_value=0 if row["enabled"] else 1
@@ -150,8 +147,7 @@ def toggle_sistema(system_id):
  if not ok:c.close();return {"success":False,"message":msg},502
  try:
   current=get_render_service(service_id);suspended=bool(current.get('suspended'))
-  if (not new_value and not suspended) or (new_value and suspended):
-   c.close();return {"success":False,"message":"O Render recebeu o comando, mas o estado ainda não foi confirmado. Aguarde alguns segundos e tente novamente."},409
+  if (not new_value and not suspended) or (new_value and suspended):c.close();return {"success":False,"message":"O Render recebeu o comando, mas o estado ainda não foi confirmado. Aguarde alguns segundos e tente novamente."},409
  except Exception:pass
  c.execute("UPDATE systems SET enabled=? WHERE id=?",(new_value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value),"render_controlled":True}
 @app.post("/sistemas/excluir/<int:system_id>")
@@ -161,5 +157,5 @@ def excluir_sistema(system_id):
 @app.post("/logout")
 def logout():session.clear();return redirect(url_for("home"))
 @app.get("/health")
-def health():return {"status":"ok","app":"Nexus Tecnologia"}
+def health():return {"status":"ok","app":"Nexus Tecnologia","database":str(DB_PATH)}
 if __name__=="__main__":app.run(host="0.0.0.0",port=5000)

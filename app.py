@@ -3,6 +3,7 @@ from functools import wraps
 from pathlib import Path
 from flask import Flask, redirect, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
+
 app=Flask(__name__,static_folder="src",static_url_path="/src")
 app.secret_key=os.environ.get("SECRET_KEY","change-this-secret-key")
 app.permanent_session_lifetime=60*60*24*30
@@ -26,28 +27,32 @@ def login_required(view):
  return wrapped
 
 def render_request(path,method="GET"):
+ if not RENDER_API_KEY: raise RuntimeError("RENDER_API_KEY não está configurada no serviço Nexus.")
  req=urllib.request.Request("https://api.render.com/v1"+path,method=method,headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
  with urllib.request.urlopen(req,timeout=20) as r:
   body=r.read().decode("utf-8"); return r.status,json.loads(body) if body else {}
 
-def find_render_service(system_name):
- if not RENDER_API_KEY:return None
- try:
-  _,data=render_request("/services?name="+urllib.parse.quote(system_name)+"&limit=100")
-  items=data if isinstance(data,list) else data.get("services",[])
-  for item in items:
-   service=item.get("service",item)
-   if str(service.get("name","")).strip().lower()==system_name.strip().lower(): return service.get("id")
- except Exception: pass
- return None
+def service_from_payload(item):
+ return item.get("service",item) if isinstance(item,dict) else {}
+
+def list_render_services():
+ _,data=render_request("/services?limit=100")
+ items=data if isinstance(data,list) else data.get("services",[])
+ return [service_from_payload(x) for x in items]
+
+def get_render_service(service_id):
+ _,data=render_request("/services/"+urllib.parse.quote(service_id,safe=""))
+ return service_from_payload(data)
 
 def render_action(service_id,action):
- if not RENDER_API_KEY:return False,"Configure RENDER_API_KEY nas variáveis do Render."
- if not service_id:return False,"Informe o ID do serviço no Render ou use um nome de serviço igual ao nome cadastrado."
- req=urllib.request.Request(f"https://api.render.com/v1/services/{service_id}/{action}",method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
+ if not RENDER_API_KEY:return False,"O RENDER_API_KEY não está configurado no serviço Nexus."
+ if not service_id:return False,"Selecione o serviço do Render deste sistema antes de ligar/desligar."
+ req=urllib.request.Request(f"https://api.render.com/v1/services/{urllib.parse.quote(service_id,safe='')}/{action}",method="POST",headers={"Authorization":f"Bearer {RENDER_API_KEY}","Accept":"application/json"})
  try:
   with urllib.request.urlopen(req,timeout=20) as r:return True,r.status
- except urllib.error.HTTPError as e:return False,f"Render retornou HTTP {e.code}. Verifique a API Key, permissões e ID do serviço."
+ except urllib.error.HTTPError as e:
+  detail=e.read().decode("utf-8",errors="replace")
+  return False,f"Render retornou HTTP {e.code}. {detail[:250]}"
  except Exception as e:return False,f"Falha ao comunicar com o Render: {e}"
 
 @app.get("/")
@@ -104,16 +109,33 @@ def editar_sistema(system_id):
 @login_required
 def listar_sistemas():
  c=get_db();rows=c.execute("SELECT id,name,url,description,enabled,render_service_id,created_at FROM systems ORDER BY id DESC").fetchall();c.close();return {"systems":[dict(x) for x in rows]}
+@app.get("/api/render-services")
+@login_required
+def api_render_services():
+ try:
+  services=list_render_services()
+  return {"configured":True,"services":[{"id":s.get("id"),"name":s.get("name"),"type":s.get("type"),"url":s.get("url"),"suspended":s.get("suspended")} for s in services if s.get("id") and s.get("name")]}
+ except urllib.error.HTTPError as e:return {"configured":True,"message":f"Render retornou HTTP {e.code}."},502
+ except Exception as e:return {"configured":False,"message":str(e)},503
+@app.get("/api/render-services/<service_id>")
+@login_required
+def api_render_service(service_id):
+ try:
+  s=get_render_service(service_id);return {"id":s.get("id"),"name":s.get("name"),"suspended":s.get("suspended"),"url":s.get("url")}
+ except Exception as e:return {"message":str(e)},502
 @app.post("/sistemas/<int:system_id>/toggle")
 @login_required
 def toggle_sistema(system_id):
  c=get_db();row=c.execute("SELECT id,name,enabled,render_service_id FROM systems WHERE id=?",(system_id,)).fetchone()
  if not row:c.close();return {"success":False,"message":"Sistema não encontrado."},404
- new_value=0 if row["enabled"] else 1; service_id=row["render_service_id"] or find_render_service(row["name"])
- if RENDER_API_KEY:
-  ok,msg=render_action(service_id,"resume" if new_value else "suspend")
-  if not ok:c.close();return {"success":False,"message":msg},502
- c.execute("UPDATE systems SET enabled=?,render_service_id=COALESCE(NULLIF(render_service_id,''),?) WHERE id=?",(new_value,service_id or "",system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value),"render_controlled":bool(service_id and RENDER_API_KEY)}
+ if not RENDER_API_KEY:c.close();return {"success":False,"message":"RENDER_API_KEY não está disponível no serviço Nexus. Configure a variável no Environment do serviço, não apenas como um nome de ambiente."},503
+ service_id=row["render_service_id"]
+ if not service_id:
+  c.close();return {"success":False,"message":"Este sistema ainda não está vinculado a um serviço do Render. Clique em Editar e selecione o serviço correto."},400
+ new_value=0 if row["enabled"] else 1
+ ok,msg=render_action(service_id,"resume" if new_value else "suspend")
+ if not ok:c.close();return {"success":False,"message":msg},502
+ c.execute("UPDATE systems SET enabled=? WHERE id=?",(new_value,system_id));c.commit();c.close();return {"success":True,"enabled":bool(new_value),"render_controlled":True}
 @app.post("/sistemas/excluir/<int:system_id>")
 @login_required
 def excluir_sistema(system_id):

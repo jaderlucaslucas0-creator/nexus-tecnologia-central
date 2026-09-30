@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
+import { useEffect, useRef } from "react";
+import { JarvisSpeech } from "./speech";
 
 type Role="user"|"jarvis";
 type Message={role:Role;text:string;time:string};
@@ -9,6 +11,9 @@ const now=()=>new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-di
 export default function App(){
  const [messages,setMessages]=useState<Message[]>([{role:"jarvis",text:"Todos os sistemas principais estão online. Aguardando seu comando.",time:now()}]);
  const [input,setInput]=useState(""); const [listening,setListening]=useState(false); const [active,setActive]=useState("CONVERSA"); const [system,setSystem]=useState("ONLINE");
+ const speech=useRef<JarvisSpeech|null>(null);
+ useEffect(()=>{ speech.current=new JarvisSpeech({onText:(text)=>{setInput(text); setTimeout(()=>sendText(text),0)},onListening:setListening,onError:(message)=>{setSystem("WARNING"); setMessages(m=>[...m,{role:"jarvis",text:message,time:now()}])}}); return ()=>speech.current?.stop(); },[]);
+ async function sendText(text:string){ const reply=await respond(text); setMessages(m=>[...m,{role:"jarvis",text:reply,time:now()}]); speech.current?.speak(reply); }
  const stats=useMemo(()=>[["NÚCLEO","ONLINE"],["IA","READY"],["MEMÓRIA","ONLINE"],["SEGURANÇA","ACTIVE"]],[]);
  async function respond(command:string){
   const c=command.toLowerCase().trim();
@@ -24,7 +29,7 @@ export default function App(){
  async function send(){
   const text=input.trim(); if(!text)return; setInput("");
   setMessages(m=>[...m,{role:"user",text,time:now()}]);
-  try { const reply=await respond(text); if(reply)setMessages(m=>[...m,{role:"jarvis",text:reply,time:now()}]); }
+  try { const reply=await respond(text); if(reply){setMessages(m=>[...m,{role:"jarvis",text:reply,time:now()}]); speech.current?.speak(reply);} }
   catch(e){ setSystem("WARNING"); setMessages(m=>[...m,{role:"jarvis",text:"Não consegui executar o comando com segurança.",time:now()}]); }
  }
  return <div className="shell">
@@ -35,7 +40,7 @@ export default function App(){
   <main className="main"><header className="top"><div><span>JARVIS AI</span><small>DESKTOP INTELLIGENCE PLATFORM</small></div><div className="connection"><i/> CONNECTED</div></header>
    <section className="workspace"><div className="hero"><div className={"orb "+(listening?"listen":"")}><div className="orbCore">J</div><div className="orbRing a"/><div className="orbRing b"/><div className="orbRing c"/></div>
     <motion.h1 animate={{opacity:[.75,1,.75]}} transition={{duration:3,repeat:Infinity}}>JARVIS</motion.h1><p>{listening?"OUVINDO SEU COMANDO":"PRONTO PARA RECEBER COMANDOS"}</p>
-    <button className={"listenBtn "+(listening?"on":"")} onClick={()=>setListening(v=>!v)}>🎙 {listening?"PARAR ESCUTA":"ATIVAR MICROFONE"}</button>
+    <button className={"listenBtn "+(listening?"on":"")} onClick={()=>{if(listening)speech.current?.stop();else speech.current?.start();}}>🎙 {listening?"PARAR ESCUTA":"ATIVAR MICROFONE"}</button>
    </div>
    <div className="panel"><div className="panelTitle"><span>{active}</span><small>v1.0.1</small></div>
     {active==="CONVERSA"?<div className="conversation">{messages.map((m,i)=><div className={"message "+m.role} key={i}><div className="avatar">{m.role==="jarvis"?"J":"V"}</div><div><b>{m.role==="jarvis"?"JARVIS":"VOCÊ"}</b><small>{m.time}</small><p>{m.text}</p></div></div>)}</div>:<div className="placeholder">Módulo <b>{active}</b> preparado para integração.</div>}

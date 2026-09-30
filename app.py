@@ -158,7 +158,8 @@ def sync_system_service(system_id, name, url):
 
 @app.get("/")
 def home():
-    return redirect(url_for("jarvis")) if session.get("authenticated") else send_from_directory(BASE_DIR, "index.html")
+    # JARVIS abre diretamente, sem tela de login.
+    return redirect(url_for("jarvis"))
 
 
 @app.get("/criar-conta")
@@ -238,12 +239,10 @@ def init_jarvis_db():
 init_jarvis_db()
 
 @app.get("/jarvis")
-@login_required
 def jarvis():
     return send_from_directory(BASE_DIR, "jarvis.html")
 
 @app.get("/api/jarvis/tasks")
-@login_required
 def jarvis_tasks():
     conn = get_db()
     rows = conn.execute("SELECT * FROM jarvis_tasks ORDER BY id DESC").fetchall()
@@ -251,7 +250,6 @@ def jarvis_tasks():
     return jsonify(tasks=[dict(r) for r in rows])
 
 @app.post("/api/jarvis/tasks")
-@login_required
 def jarvis_create_task():
     data = request.get_json(silent=True) or request.form
     title = str(data.get("title", "")).strip()
@@ -278,7 +276,6 @@ def jarvis_create_task():
     return jsonify(success=True, id=task_id)
 
 @app.post("/api/jarvis/tasks/<int:task_id>/toggle")
-@login_required
 def jarvis_toggle_task(task_id):
     conn = get_db()
     conn.execute("UPDATE jarvis_tasks SET enabled=CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id=?", (task_id,))
@@ -287,7 +284,6 @@ def jarvis_toggle_task(task_id):
     return jsonify(success=True)
 
 @app.post("/api/jarvis/tasks/<int:task_id>/delete")
-@login_required
 def jarvis_delete_task(task_id):
     conn = get_db()
     conn.execute("DELETE FROM jarvis_tasks WHERE id=?", (task_id,))
@@ -296,7 +292,6 @@ def jarvis_delete_task(task_id):
     return jsonify(success=True)
 
 @app.get("/api/jarvis/memory")
-@login_required
 def jarvis_memory():
     conn = get_db()
     rows = conn.execute("SELECT * FROM jarvis_memory ORDER BY id DESC LIMIT 50").fetchall()
@@ -304,7 +299,6 @@ def jarvis_memory():
     return jsonify(memory=[dict(r) for r in rows])
 
 @app.post("/api/jarvis/memory")
-@login_required
 def jarvis_save_memory():
     data = request.get_json(silent=True) or request.form
     content = str(data.get("content", "")).strip()
@@ -317,7 +311,6 @@ def jarvis_save_memory():
     return jsonify(success=True)
 
 @app.delete("/api/jarvis/memory/<int:memory_id>")
-@login_required
 def jarvis_delete_memory(memory_id):
     conn = get_db()
     conn.execute("DELETE FROM jarvis_memory WHERE id=?", (memory_id,))
@@ -326,7 +319,6 @@ def jarvis_delete_memory(memory_id):
     return jsonify(success=True)
 
 @app.get("/api/jarvis/computer")
-@login_required
 def jarvis_computer():
     import platform, shutil
     return jsonify(
@@ -337,7 +329,6 @@ def jarvis_computer():
     )
 
 @app.post("/api/jarvis/command")
-@login_required
 def jarvis_command():
     data = request.get_json(silent=True) or request.form
     command = str(data.get("command", "")).strip()

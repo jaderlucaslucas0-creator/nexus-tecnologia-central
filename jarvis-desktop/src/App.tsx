@@ -11,6 +11,10 @@ const now=()=>new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-di
 export default function App(){
  const [messages,setMessages]=useState<Message[]>([{role:"jarvis",text:"Todos os sistemas principais estão online. Aguardando seu comando.",time:now()}]);
  const [input,setInput]=useState(""); const [listening,setListening]=useState(false); const [active,setActive]=useState("CONVERSA"); const [system,setSystem]=useState("ONLINE");
+ const [apiEndpoint,setApiEndpoint]=useState(localStorage.getItem("jarvis_endpoint")||"");
+ const [apiKey,setApiKey]=useState(localStorage.getItem("jarvis_key")||"");
+ const [model,setModel]=useState(localStorage.getItem("jarvis_model")||"");
+ const [memory,setMemory]=useState<string[]>(JSON.parse(localStorage.getItem("jarvis_memory")||"[]"));
  const speech=useRef<JarvisSpeech|null>(null);
  useEffect(()=>{ speech.current=new JarvisSpeech({onText:(text)=>{setInput(text); setTimeout(()=>sendText(text),0)},onListening:setListening,onError:(message)=>{setSystem("WARNING"); setMessages(m=>[...m,{role:"jarvis",text:message,time:now()}])}}); return ()=>speech.current?.stop(); },[]);
  async function sendText(text:string){ const reply=await respond(text); setMessages(m=>[...m,{role:"jarvis",text:reply,time:now()}]); speech.current?.speak(reply); }
@@ -22,8 +26,13 @@ export default function App(){
   if(c.startsWith("abrir ")) { const url=c.slice(6).trim(); if(url.startsWith("http")) { await invoke("open_url",{url}); return "Abrindo o endereço solicitado."; } }
   if(c.includes("hora")) return "Agora são "+now()+".";
   if(c.includes("olá")||c.includes("ola")) return "Olá. JARVIS pronto para executar seus comandos.";
-  if(c.includes("ajuda")) return "Experimente: status, sistema, hora ou abrir https://... .";
+  if(c.includes("ajuda")) return "Experimente: status, sistema, hora, abrir https://..., abrir calculadora ou pesquisar.";
   if(c.includes("limpar")) { setMessages([]); return ""; }
+  if(c.startsWith("memorize ")||c.startsWith("guarde ")){ const value=command.split(" ").slice(1).join(" ").trim(); const next=[...memory,value]; setMemory(next); localStorage.setItem("jarvis_memory",JSON.stringify(next)); return "Memória salva."; }
+  if(c.includes("abrir calculadora")){await invoke("launch_app",{app:"calc"});return "Calculadora aberta."}
+  if(c.includes("abrir bloco de notas")){await invoke("launch_app",{app:"notepad"});return "Bloco de notas aberto."}
+  if(c.startsWith("pesquisar ")||c.startsWith("pesquise ")){const q=command.replace(/^pesquis(ar|e)\s+/i,""); const results=await invoke<any[]>("web_search",{query:q}); return results.length?"Encontrei "+results.length+" resultados para "+q+".":"Não encontrei resultados."}
+  if(apiEndpoint){ const context=messages.slice(-12).map(m=>({role:m.role==="jarvis"?"assistant":"user",content:m.text})); return await invoke<string>("ai_chat",{endpoint:apiEndpoint,apiKey,model,system:"Você é JARVIS, assistente pessoal em português do Brasil. Seja útil, objetivo e seguro. Não execute ações perigosas sem confirmação.",messages:[...context,{role:"user",content:command}]}); }
   return "Comando recebido. O núcleo nativo está ativo. A próxima camada conectará IA, voz e automações.";
  }
  async function send(){
@@ -43,7 +52,7 @@ export default function App(){
     <button className={"listenBtn "+(listening?"on":"")} onClick={()=>{if(listening)speech.current?.stop();else speech.current?.start();}}>🎙 {listening?"PARAR ESCUTA":"ATIVAR MICROFONE"}</button>
    </div>
    <div className="panel"><div className="panelTitle"><span>{active}</span><small>v1.0.1</small></div>
-    {active==="CONVERSA"?<div className="conversation">{messages.map((m,i)=><div className={"message "+m.role} key={i}><div className="avatar">{m.role==="jarvis"?"J":"V"}</div><div><b>{m.role==="jarvis"?"JARVIS":"VOCÊ"}</b><small>{m.time}</small><p>{m.text}</p></div></div>)}</div>:<div className="placeholder">Módulo <b>{active}</b> preparado para integração.</div>}
+    {active==="MEMÓRIA"?<div className="placeholder"><h3>MEMÓRIA</h3><p>{memory.length?memory.map((m,i)=><span key={i} style={{display:"block",margin:"8px"}}>• {m}</span>):"Nenhuma memória salva."}</p></div>:active==="CONFIGURAÇÕES"?<div className="settings"><input value={apiEndpoint} onChange={e=>{setApiEndpoint(e.target.value);localStorage.setItem("jarvis_endpoint",e.target.value)}} placeholder="Endpoint compatível com OpenAI"/><input value={apiKey} onChange={e=>{setApiKey(e.target.value);localStorage.setItem("jarvis_key",e.target.value)}} placeholder="Chave da API"/><input value={model} onChange={e=>{setModel(e.target.value);localStorage.setItem("jarvis_model",e.target.value)}} placeholder="Modelo"/><p>As configurações ficam salvas localmente neste computador.</p></div>:active==="CONVERSA"?<div className="conversation">{messages.map((m,i)=><div className={"message "+m.role} key={i}><div className="avatar">{m.role==="jarvis"?"J":"V"}</div><div><b>{m.role==="jarvis"?"JARVIS":"VOCÊ"}</b><small>{m.time}</small><p>{m.text}</p></div></div>)}</div>:<div className="placeholder">Módulo <b>{active}</b> preparado para integração.</div>}
     <div className="composer"><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Digite um comando..."/><button onClick={send}>ENVIAR</button></div>
    </div></section>
    <footer className="statusGrid">{stats.map(([a,b])=><div key={a}><small>{a}</small><b>{b}</b></div>)}</footer>

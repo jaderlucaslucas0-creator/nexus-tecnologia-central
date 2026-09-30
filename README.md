@@ -1,28 +1,17 @@
 # Nexus Tecnologia — JARVIS AI
 
-JARVIS AI v0.1 é a primeira base desktop modular do assistente pessoal da Nexus Tecnologia.
+JARVIS AI v0.2 adiciona pesquisa, memória contextual e ferramentas locais à base desktop modular.
 
-## Desktop v0.1
+## Arquitetura
 
-- Interface desktop PySide6.
-- JARVIS Core com contexto e roteamento básico.
-- Memória persistente SQLite.
-- Camada de segurança para ações locais.
-- Ferramentas de sistema e abertura de URLs.
-- Arquitetura inicial de plugins.
-- Fallback local quando nenhum provedor remoto de IA está configurado.
-- Testes do núcleo e build automático para Windows.
-
-## Estrutura
-
-core/ — núcleo, contexto e segurança.
-ai/ — abstração de provedores de IA.
-memory/ — SQLite e memória persistente.
-tools/ — ferramentas locais.
-plugins/ — sistema de plugins.
-interface/ — interface e tema futurista.
-security/ — camada de permissões.
-tests/ — testes automatizados.
+- `core/`: núcleo, contexto e segurança.
+- `ai/`: roteamento e abstração do provedor de IA.
+- `memory/`: SQLite e memória de curto/longo prazo.
+- `tools/`: sistema, arquivos, aplicativos e pesquisa.
+- `plugins/`: base para plugins.
+- `interface/`: interface desktop.
+- `security/`: permissões e segurança.
+- `tests/`: testes automatizados.
 
 ## Executar
 
@@ -31,15 +20,20 @@ python -m pip install -r desktop-requirements.txt
 python desktop_app.py
 ```
 
-Comandos iniciais: `/system`, `/clear`, `abra https://exemplo.com`, `memorize ...`.
+## Comandos v0.2
 
-## Evolução
+- `/system` — informações básicas do computador.
+- `/clear` — limpa o contexto.
+- `pesquise Python 3.14` — pesquisa na web.
+- `procure arquivo relatório` — procura arquivos pelo nome.
+- `abra https://exemplo.com` — abre uma URL permitida.
+- `memorize ...` — salva memória local.
 
-v0.1: núcleo, interface, memória, segurança e ferramentas básicas.
-v0.2: IA remota, pesquisa e comandos adicionais.
+A pesquisa e serviços externos podem ficar indisponíveis; o núcleo mantém fallback local.
+
+## Próximas versões
+
 v0.3: voz, wake word e automações.
 v0.4: visão e plugins avançados.
 v0.5: dashboard e logs avançados.
 v1.0: pacote completo para uso diário.
-
-A aplicação web existente da Nexus Tecnologia permanece preservada; `desktop_app.py` é o ponto de entrada do aplicativo desktop.

@@ -1,4 +1,9 @@
-"""JARVIS Desktop - Nexus Tecnologia."""
+"""JARVIS Desktop - Nexus Tecnologia.
+
+Windows desktop wrapper using pywebview + Qt/PySide6.
+Qt is used explicitly to avoid the WinForms/pythonnet backend that can
+fail inside PyInstaller with Python.Runtime.dll.
+"""
 import os
 import threading
 import time
@@ -12,6 +17,7 @@ import webview
 
 def start_local_server():
     from app import app
+
     app.run(
         host="127.0.0.1",
         port=int(os.environ.get("NEXUS_DESKTOP_PORT", "8765")),
@@ -29,6 +35,7 @@ def main():
     else:
         threading.Thread(target=start_local_server, daemon=True).start()
         url = "http://127.0.0.1:8765/"
+
         for _ in range(80):
             try:
                 with urllib.request.urlopen(url + "health", timeout=0.5):
@@ -45,7 +52,10 @@ def main():
         resizable=True,
         text_select=True,
     )
-    webview.start()
+
+    # Força o backend Qt/PySide6 no Windows.
+    # Isso evita o caminho WinForms -> pythonnet -> Python.Runtime.dll.
+    webview.start(gui="qt", debug=False)
 
 
 if __name__ == "__main__":

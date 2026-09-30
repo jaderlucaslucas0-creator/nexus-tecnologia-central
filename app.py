@@ -328,6 +328,46 @@ def jarvis_computer():
         disco_livre_gb=round(shutil.disk_usage(BASE_DIR).free / (1024**3), 2)
     )
 
+@app.post("/api/jarvis/ai")
+@login_required
+def jarvis_ai():
+    data = request.get_json(silent=True) or {}
+    prompt = str(data.get("prompt", "")).strip()
+    history = data.get("history", [])
+    endpoint = os.environ.get("JARVIS_AI_API_URL", "").strip()
+    api_key = os.environ.get("JARVIS_AI_API_KEY", "").strip()
+    model = os.environ.get("JARVIS_AI_MODEL", "").strip()
+    if not prompt:
+        return json_error("Prompt vazio.")
+    if not endpoint:
+        return json_error("A IA do JARVIS não está configurada no Render.", 503)
+    messages = [{"role": "system", "content": "Você é JARVIS, assistente pessoal em português do Brasil. Responda de forma útil, objetiva e segura."}]
+    if isinstance(history, list):
+        for item in history[-12:]:
+            if isinstance(item, dict) and item.get("role") in ("user", "assistant") and item.get("content"):
+                messages.append({"role": item["role"], "content": str(item["content"])[:4000]})
+    messages.append({"role": "user", "content": prompt})
+    payload = json.dumps({"model": model, "messages": messages}).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Nexus-JARVIS/1.0"}
+    if api_key:
+        headers["Authorization"] = "Bearer " + api_key
+    req = urllib.request.Request(endpoint, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        choices = result.get("choices", [])
+        if choices and choices[0].get("message", {}).get("content"):
+            return jsonify(success=True, reply=str(choices[0]["message"]["content"]))
+        if result.get("response"):
+            return jsonify(success=True, reply=str(result["response"]))
+        return json_error("A IA retornou uma resposta sem conteúdo.", 502)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        return json_error(f"Provedor de IA retornou HTTP {exc.code}: {detail}", 502)
+    except Exception as exc:
+        return json_error("Falha ao conectar com o provedor de IA: " + str(exc), 502)
+
+
 @app.post("/api/jarvis/command")
 def jarvis_command():
     data = request.get_json(silent=True) or request.form

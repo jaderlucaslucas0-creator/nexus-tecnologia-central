@@ -3,17 +3,19 @@ name: JARVIS Desktop - Windows
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - "desktop_app.py"
-      - "desktop-requirements.txt"
-      - "build-desktop.bat"
-      - "app.py"
-      - "*.html"
-      - "src/**"
-      - "jarvis/**"
-      - ".github/workflows/build-desktop.yml"
+      - 'desktop_app.py'
+      - 'desktop_config.py'
+      - 'desktop-requirements.txt'
+      - 'core/**'
+      - 'ai/**'
+      - 'memory/**'
+      - 'tools/**'
+      - 'interface/**'
+      - 'security/**'
+      - 'plugins/**'
+      - '.github/workflows/build-desktop.yml'
 
 permissions:
   contents: read
@@ -22,51 +24,28 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Baixar projeto
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Preparar Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Instalar dependências
-        run: python -m pip install --upgrade pip
-
-      - name: Instalar dependências do JARVIS
+          python-version: '3.12'
+      - name: Install dependencies
         run: python -m pip install -r desktop-requirements.txt
-
-      - name: Gerar aplicativo
-        run: >
-          python -m PyInstaller --noconfirm --clean --windowed
-          --name JARVIS-Nexus
-          --collect-all PySide6
-          --collect-all PySide6.QtWebEngineCore
-          --collect-all PySide6.QtWebEngineWidgets
-          --hidden-import=PySide6.QtWebEngineCore
-          --hidden-import=PySide6.QtWebEngineWidgets
-          --add-data "index.html;."
-          --add-data "dashboard.html;."
-          --add-data "jarvis.html;."
-          --add-data "criar-conta.html;."
-          --add-data "usuarios.html;."
-          --add-data "sistemas.html;."
-          --add-data "src;src"
-          --add-data "jarvis;jarvis"
-          desktop_app.py
-
-      - name: Testar executável
+      - name: Validate Python
+        run: python -m compileall -q core ai memory tools interface security plugins desktop_config.py desktop_app.py
+      - name: Test core
+        run: python tests/test_jarvis_core.py
+      - name: Build executable
+        run: python -m PyInstaller --noconfirm --clean --windowed --name JARVIS-AI desktop_app.py
+      - name: Verify executable
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist/JARVIS-Nexus/JARVIS-Nexus.exe")) {
-            throw "JARVIS-Nexus.exe não foi gerado."
-          }
-          Write-Host "Executável gerado com sucesso."
-
-      - name: Publicar aplicativo para download
+          if (-not (Test-Path 'dist/JARVIS-AI/JARVIS-AI.exe')) { throw 'JARVIS-AI.exe não foi gerado.' }
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-Nexus-Windows
-          path: dist/JARVIS-Nexus/
+          name: JARVIS-AI-Windows
+          path: dist/JARVIS-AI/
           if-no-files-found: error
           retention-days: 30

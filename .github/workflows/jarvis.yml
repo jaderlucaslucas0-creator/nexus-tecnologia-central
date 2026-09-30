@@ -1,0 +1,29 @@
+name: JARVIS - tarefas automaticas
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  jarvis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+      - name: Executar JARVIS
+        run: python jarvis/jarvis_agent.py
+      - name: Salvar resultados
+        run: |
+          git config user.name "JARVIS"
+          git config user.email "actions@users.noreply.github.com"
+          git add jarvis/results/
+          if git diff --cached --quiet; then
+            echo "Nenhum resultado novo."
+          else
+            git commit -m "JARVIS: atualiza resultados automaticos"
+            git push
+          fi

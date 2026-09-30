@@ -208,6 +208,175 @@ def criar_usuario():
     return jsonify(success=True, message="Conta criada com sucesso.")
 
 
+
+# ---------------- JARVIS ----------------
+JARVIS_DATA_DIR = BASE_DIR / "jarvis"
+JARVIS_DATA_DIR.mkdir(exist_ok=True)
+
+def init_jarvis_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS jarvis_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        task_type TEXT NOT NULL DEFAULT 'activity',
+        query TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        run_at TEXT DEFAULT '',
+        repeat_minutes INTEGER DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_run TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS jarvis_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.commit()
+    conn.close()
+
+init_jarvis_db()
+
+@app.get("/jarvis")
+@login_required
+def jarvis():
+    return send_from_directory(BASE_DIR, "jarvis.html")
+
+@app.get("/api/jarvis/tasks")
+@login_required
+def jarvis_tasks():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM jarvis_tasks ORDER BY id DESC").fetchall()
+    conn.close()
+    return jsonify(tasks=[dict(r) for r in rows])
+
+@app.post("/api/jarvis/tasks")
+@login_required
+def jarvis_create_task():
+    data = request.get_json(silent=True) or request.form
+    title = str(data.get("title", "")).strip()
+    task_type = str(data.get("task_type", "activity")).strip()
+    query = str(data.get("query", "")).strip()
+    description = str(data.get("description", "")).strip()
+    run_at = str(data.get("run_at", "")).strip()
+    try:
+        repeat = max(0, int(data.get("repeat_minutes", 0) or 0))
+    except (TypeError, ValueError):
+        repeat = 0
+    if not title:
+        return json_error("Dê um nome para a tarefa.")
+    if task_type not in ("research", "activity", "reminder"):
+        task_type = "activity"
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO jarvis_tasks(title,task_type,query,description,run_at,repeat_minutes,enabled) VALUES(?,?,?,?,?,?,1)",
+        (title, task_type, query, description, run_at, repeat)
+    )
+    conn.commit()
+    task_id = cur.lastrowid
+    conn.close()
+    return jsonify(success=True, id=task_id)
+
+@app.post("/api/jarvis/tasks/<int:task_id>/toggle")
+@login_required
+def jarvis_toggle_task(task_id):
+    conn = get_db()
+    conn.execute("UPDATE jarvis_tasks SET enabled=CASE enabled WHEN 1 THEN 0 ELSE 1 END WHERE id=?", (task_id,))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+@app.post("/api/jarvis/tasks/<int:task_id>/delete")
+@login_required
+def jarvis_delete_task(task_id):
+    conn = get_db()
+    conn.execute("DELETE FROM jarvis_tasks WHERE id=?", (task_id,))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+@app.get("/api/jarvis/memory")
+@login_required
+def jarvis_memory():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM jarvis_memory ORDER BY id DESC LIMIT 50").fetchall()
+    conn.close()
+    return jsonify(memory=[dict(r) for r in rows])
+
+@app.post("/api/jarvis/memory")
+@login_required
+def jarvis_save_memory():
+    data = request.get_json(silent=True) or request.form
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return json_error("A memória está vazia.")
+    conn = get_db()
+    conn.execute("INSERT INTO jarvis_memory(content) VALUES(?)", (content[:2000],))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+@app.delete("/api/jarvis/memory/<int:memory_id>")
+@login_required
+def jarvis_delete_memory(memory_id):
+    conn = get_db()
+    conn.execute("DELETE FROM jarvis_memory WHERE id=?", (memory_id,))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+@app.get("/api/jarvis/computer")
+@login_required
+def jarvis_computer():
+    import platform, shutil
+    return jsonify(
+        sistema=platform.system(), versao=platform.version(),
+        arquitetura=platform.machine(), processador=platform.processor(),
+        python=platform.python_version(),
+        disco_livre_gb=round(shutil.disk_usage(BASE_DIR).free / (1024**3), 2)
+    )
+
+@app.post("/api/jarvis/command")
+@login_required
+def jarvis_command():
+    data = request.get_json(silent=True) or request.form
+    command = str(data.get("command", "")).strip()
+    low = command.lower()
+    if not command:
+        return json_error("Comando vazio.")
+    # Comandos simples e seguros: pesquisa vira tarefa; abrir site é executado no navegador do usuário.
+    if low.startswith(("pesquise ", "pesquisa ", "pesquisar ")):
+        query = command.split(" ", 1)[1].strip()
+        conn = get_db()
+        conn.execute("INSERT INTO jarvis_tasks(title,task_type,query,description,enabled) VALUES(?,?,?,?,1)",
+                     ("Pesquisa: " + query[:80], "research", query[:500], "Pesquisa solicitada por voz/texto."))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True, reply="Entendido. Criei uma pesquisa automática para: " + query)
+    if low.startswith(("lembrete ", "lembre-me ", "lembrar ")):
+        text_cmd = command.split(" ", 1)[1].strip()
+        conn = get_db()
+        conn.execute("INSERT INTO jarvis_tasks(title,task_type,description,enabled) VALUES(?,?,?,?,1)",
+                     ("Lembrete", "reminder", "", text_cmd))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True, reply="Lembrete salvo na memória do JARVIS.")
+    if low.startswith(("lembre que ", "memorize ", "guardar ", "guarde ")):
+        mem = command.split(" ", 2)[-1].strip()
+        conn = get_db()
+        conn.execute("INSERT INTO jarvis_memory(content) VALUES(?)", (mem[:2000],))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True, reply="Memória salva. Vou considerar isso nas próximas conversas.")
+    if low.startswith(("abra ", "abrir ")):
+        target = command.split(" ", 1)[1].strip()
+        if target.startswith(("http://", "https://")):
+            return jsonify(success=True, action="open_url", url=target, reply="Abrindo o site.")
+        if "." in target and " " not in target:
+            return jsonify(success=True, action="open_url", url="https://" + target, reply="Abrindo o site.")
+        return jsonify(success=True, reply="Para abrir programas do computador, o JARVIS precisa estar rodando no aplicativo desktop local.")
+    return jsonify(success=True, reply="Entendi o comando, mas ainda não tenho uma ação automática configurada para ele.")
+
 @app.get("/dashboard")
 @login_required
 def dashboard():

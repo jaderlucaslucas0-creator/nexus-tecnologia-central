@@ -1,0 +1,13 @@
+{
+  "tasks": [
+    {
+      "id": "exemplo-pesquisa",
+      "enabled": false,
+      "type": "research",
+      "title": "Pesquisa automática",
+      "query": "novidades de tecnologia e inteligência artificial",
+      "run_at": null,
+      "repeat_minutes": 1440
+    }
+  ]
+}

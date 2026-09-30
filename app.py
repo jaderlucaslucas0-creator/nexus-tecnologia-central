@@ -158,7 +158,7 @@ def sync_system_service(system_id, name, url):
 
 @app.get("/")
 def home():
-    return redirect(url_for("dashboard")) if session.get("authenticated") else send_from_directory(BASE_DIR, "index.html")
+    return redirect(url_for("jarvis")) if session.get("authenticated") else send_from_directory(BASE_DIR, "index.html")
 
 
 @app.get("/criar-conta")
@@ -179,7 +179,7 @@ def login():
         session.clear()
         session.permanent = True
         session.update(authenticated=True, username=user["username"], name=user["name"])
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("jarvis"))
     return json_error("Usuário ou senha incorretos.", 401)
 
 

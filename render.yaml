@@ -16,6 +16,12 @@ services:
         sync: false
       - key: RENDER_API_KEY
         sync: false
+      - key: JARVIS_AI_API_URL
+        sync: false
+      - key: JARVIS_AI_API_KEY
+        sync: false
+      - key: JARVIS_AI_MODEL
+        sync: false
     disk:
       name: nexus-data
       mountPath: /var/data
